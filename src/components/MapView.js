@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Popup, ScaleControl, useMap, useMapEvents, Polyline, Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { BsFillTruckFrontFill } from "react-icons/bs";
@@ -7,7 +7,6 @@ import { MdLayers, MdWhatshot, MdTimeline } from "react-icons/md";
 
 // Import Leaflet CSS for proper rendering
 import 'leaflet/dist/leaflet.css';
-// Import the CSS file
 import './mapview.css';
 
 // Fix for default markers in Leaflet
@@ -20,8 +19,10 @@ L.Icon.Default.mergeOptions({
 
 // API configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const GOOGLE_MAPS_API_KEY = 'AIzaSyB7GMusWIecrMygztw8BEGbc4zKhBru8N8';
 
 console.log('🌐 MapView using API:', API_BASE_URL);
+console.log('🗺️ Using Google Maps API Key:', GOOGLE_MAPS_API_KEY);
 
 // Fetch realtime locations from our backend
 const fetchRealtimeLocations = async () => {
@@ -54,6 +55,62 @@ const fetchRealtimeLocations = async () => {
   }
 };
 
+// Snap coordinates to roads using Google Roads API
+const snapToRoads = async (coordinates) => {
+  if (!coordinates || coordinates.length < 2) return coordinates;
+  
+  try {
+    // Format coordinates for the API
+    const path = coordinates.map(coord => `${coord.lat || coord[0]},${coord.lng || coord[1]}`).join('|');
+    
+    console.log('🛣️ Snapping coordinates to roads...');
+    const response = await fetch(
+      `https://roads.googleapis.com/v1/snapToRoads?path=${path}&interpolate=true&key=${GOOGLE_MAPS_API_KEY}`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Roads API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('✅ Roads API response:', data);
+    
+    if (data.snappedPoints && data.snappedPoints.length > 0) {
+      const snappedCoordinates = data.snappedPoints.map(point => [
+        point.location.latitude,
+        point.location.longitude
+      ]);
+      console.log(`🛣️ Successfully snapped ${coordinates.length} points to ${snappedCoordinates.length} road points`);
+      return snappedCoordinates;
+    }
+    
+    return coordinates;
+  } catch (error) {
+    console.error('❌ Error snapping to roads:', error);
+    return coordinates;
+  }
+};
+
+// Batch process coordinates for road snapping
+const batchSnapToRoads = async (coordinates, batchSize = 100) => {
+  if (!coordinates || coordinates.length < 2) return coordinates;
+  
+  const snappedCoordinates = [];
+  
+  for (let i = 0; i < coordinates.length; i += batchSize) {
+    const batch = coordinates.slice(i, i + batchSize);
+    const snappedBatch = await snapToRoads(batch);
+    snappedCoordinates.push(...snappedBatch);
+    
+    // Add delay to avoid rate limiting
+    if (i + batchSize < coordinates.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  return snappedCoordinates;
+};
+
 // Helper function to safely convert to fixed decimal
 const safeToFixed = (value, decimals = 6) => {
   if (value === null || value === undefined || value === '') {
@@ -74,14 +131,14 @@ const parseCoordinatesFromRawPacket = (rawPacket) => {
     let latitude = null;
     let longitude = null;
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i].includes('.') && i + 1 < parts.length && parts[i+1] === 'N') {
+      if (parts[i].includes('.') && i + 1 < parts.length && parts[i + 1] === 'N') {
         latitude = parseFloat(parts[i]);
       }
-      if (parts[i].includes('.') && i + 1 < parts.length && parts[i+1] === 'E') {
+      if (parts[i].includes('.') && i + 1 < parts.length && parts[i + 1] === 'E') {
         longitude = parseFloat(parts[i]);
       }
     }
-    if (latitude !== null && longitude !== null && 
+    if (latitude !== null && longitude !== null &&
         !isNaN(latitude) && !isNaN(longitude) &&
         latitude >= 6 && latitude <= 38 && longitude >= 68 && longitude <= 98) {
       return { latitude, longitude };
@@ -121,25 +178,11 @@ const calculateHeading = (fromLat, fromLng, toLat, toLng) => {
   const toLatRad = toLat * Math.PI / 180;
   const deltaLngRad = (toLng - fromLng) * Math.PI / 180;
   const y = Math.sin(deltaLngRad) * Math.cos(toLatRad);
-  const x = Math.cos(fromLatRad) * Math.sin(toLatRad) - 
+  const x = Math.cos(fromLatRad) * Math.sin(toLatRad) -
            Math.sin(fromLatRad) * Math.cos(toLatRad) * Math.cos(deltaLngRad);
   let heading = Math.atan2(y, x) * 180 / Math.PI;
   heading = (heading + 360) % 360;
   return heading;
-};
-
-// Calculate distance between two points using Haversine formula (in meters)
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in meters
 };
 
 // Smooth path using moving average
@@ -335,13 +378,15 @@ const createVehicleIcon = (color = '#3388ff', heading = 0, isSelected = false) =
   return L.divIcon({
     className: 'custom-vehicle-marker',
     html: `
-      <div style="width: ${size}px; height: ${size}px; position: relative; transform: rotate(${rotation}deg); transition: transform 0.5s ease-in-out;">
-        <div style="width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
-          ${svgIcon}
+      <div class="vehicle-icon-container" style="width: ${size}px; height: ${size}px; position: relative;">
+        <div class="vehicle-icon-rotation" style="width: ${size}px; height: ${size}px; position: relative; transform: rotate(${rotation}deg);">
+          <div class="vehicle-icon-body" style="width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+            ${svgIcon}
+          </div>
+          ${isSelected ? `
+          <div class="selection-pulse" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${size * 0.8}px; height: ${size * 0.8}px; background-color: rgba(255,255,255,0.3); border-radius: 50%; animation: pulse 2s infinite; border: 2px solid rgba(255,255,255,0.5);"></div>
+          ` : ''}
         </div>
-        ${isSelected ? `
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${size * 0.8}px; height: ${size * 0.8}px; background-color: rgba(255,255,255,0.3); border-radius: 50%; animation: pulse 2s infinite; border: 2px solid rgba(255,255,255,0.5);"></div>
-        ` : ''}
       </div>
       <style>
         @keyframes pulse {
@@ -352,251 +397,226 @@ const createVehicleIcon = (color = '#3388ff', heading = 0, isSelected = false) =
       </style>
     `,
     iconSize: [size, size],
-    iconAnchor: [size/2, size/2],
-    popupAnchor: [0, -size/2]
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
 };
 
 // Path Animation Marker Component for Real-Time Tracking
-const PathAnimationMarker = ({ 
-  positions, 
-  color, 
-  isSelected, 
-  device, // Pass device data for speed and timing
-  children, 
-  onAnimationComplete
+const PathAnimationMarker = ({
+  positions,
+  color,
+  isSelected,
+  device,
+  children,
 }) => {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [currentHeading, setCurrentHeading] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
-  
-  const animationFrameRef = useRef(null);
-  const animationStartTimeRef = useRef(0);
-  const targetPositionRef = useRef(null);
-  const targetHeadingRef = useRef(0);
-  const startPositionRef = useRef(null);
-  const startHeadingRef = useRef(0);
-  const currentSegmentRef = useRef(0);
-  const animationDurationRef = useRef(20000); // Default to 20-second polling interval
-  const lastPositionsLengthRef = useRef(0);
-  const progressRef = useRef(0); // Track animation progress for smooth transitions
+  const [pathIndex, setPathIndex] = useState(0);
+  const [segmentProgress, setSegmentProgress] = useState(0);
+  const animationRef = useRef(null);
+  const startTimeRef = useRef(null);
+  const lastPositionRef = useRef(null);
+  const animationStartIndexRef = useRef(0);
+  const totalDistanceRef = useRef(0);
+  const animationDurationRef = useRef(10000); // Default 10 seconds
 
-  // Calculate heading between two points
-  const calculateHeading = (fromLat, fromLng, toLat, toLng) => {
-    const fromLatRad = fromLat * Math.PI / 180;
-    const toLatRad = toLat * Math.PI / 180;
-    const deltaLngRad = (toLng - fromLng) * Math.PI / 180;
-    const y = Math.sin(deltaLngRad) * Math.cos(toLatRad);
-    const x = Math.cos(fromLatRad) * Math.sin(toLatRad) - 
-             Math.sin(fromLatRad) * Math.cos(toLatRad) * Math.cos(deltaLngRad);
-    let heading = Math.atan2(y, x) * 180 / Math.PI;
-    heading = (heading + 360) % 360;
-    return heading;
+  // Calculate distance between two points in meters
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   };
 
-  // Initialize with first position
-  useEffect(() => {
-    if (positions && positions.length > 0 && !currentPosition) {
-      setCurrentPosition(positions[0]);
-      startPositionRef.current = positions[0];
-      if (positions.length > 1) {
-        const heading = calculateHeading(
-          positions[0][0], positions[0][1],
-          positions[1][0], positions[1][1]
-        );
-        setCurrentHeading(heading);
-        startHeadingRef.current = heading;
-      }
-      lastPositionsLengthRef.current = positions.length;
-      console.log('🚀 Initialized marker at:', positions[0]);
-    }
-  }, [positions, currentPosition]);
-
-  // Start animation function
-  const startAnimation = useCallback(() => {
-    if (positions.length < 2 || currentSegmentRef.current >= positions.length - 1) {
-      setIsAnimating(false);
-      if (onAnimationComplete) {
-        onAnimationComplete();
-      }
-      console.log('⏹️ Animation stopped: insufficient points or at end of path');
-      return;
-    }
-
-    const startIndex = currentSegmentRef.current;
-    const endIndex = startIndex + 1;
+  // Calculate animation duration based on distance between points
+  const calculateAnimationDuration = (startIndex, endIndex) => {
+    // Calculate the distance between the last two points
+    const lastPointIndex = Math.max(1, positions.length - 1);
+    const prevPoint = positions[lastPointIndex - 1];
+    const currentPoint = positions[lastPointIndex];
     
-    startPositionRef.current = positions[startIndex];
-    targetPositionRef.current = positions[endIndex];
-    
-    const segmentHeading = calculateHeading(
-      positions[startIndex][0], positions[startIndex][1],
-      positions[endIndex][0], positions[endIndex][1]
+    const distance = calculateDistance(
+      prevPoint[0], prevPoint[1],
+      currentPoint[0], currentPoint[1]
     );
     
-    targetHeadingRef.current = segmentHeading;
-    startHeadingRef.current = currentHeading;
-    
-    animationStartTimeRef.current = Date.now();
-
-    // Calculate animation duration based on device speed
-    const speedKmh = device.speed ? parseFloat(device.speed) : 0;
-    const speedMs = speedKmh * 1000 / 3600; // Convert km/h to m/s
-    const distanceM = calculateDistance(
-      positions[startIndex][0], positions[startIndex][1],
-      positions[endIndex][0], positions[endIndex][1]
-    );
-
-    if (speedMs > 0) {
-      // Duration = distance (m) / speed (m/s) * 1000 (to ms)
-      animationDurationRef.current = Math.max(1000, Math.min(30000, (distanceM / speedMs) * 1000));
-      console.log(`⏱️ Animation duration set to ${animationDurationRef.current}ms based on speed ${speedKmh} km/h and distance ${distanceM.toFixed(2)}m`);
+    // Calculate speed based on distance:
+    // - For short distances (< 50m): slower animation (8 seconds)
+    // - For medium distances (50-200m): normal animation (5 seconds)
+    // - For long distances (> 200m): faster animation (2 seconds)
+    let duration;
+    if (distance < 50) {
+      duration = 8000; // 8 seconds for short distances
+    } else if (distance < 200) {
+      duration = 5000; // 5 seconds for medium distances
     } else {
-      // Fallback to default duration if speed is invalid or zero
-      animationDurationRef.current = 20000; // 20 seconds
-      console.log(`⚠️ Invalid or zero speed (${speedKmh} km/h), using default duration ${animationDurationRef.current}ms`);
+      duration = 2000; // 2 seconds for long distances
     }
     
-    setIsAnimating(true);
-    console.log(`▶️ Starting animation from segment ${startIndex} to ${endIndex}`);
-  }, [positions, currentHeading, device, onAnimationComplete]);
+    // Apply device speed factor if available
+    const deviceSpeed = device.speed ? parseFloat(device.speed) : 50; // km/h
+    const speedFactor = deviceSpeed / 50; // Normalize to 50 km/h baseline
+    
+    // Adjust duration based on speed - faster device = shorter duration
+    duration = duration / speedFactor;
+    
+    // Ensure duration is within reasonable bounds
+    duration = Math.max(1000, Math.min(10000, duration));
+    
+    totalDistanceRef.current = distance;
+    animationDurationRef.current = duration;
+    
+    console.log(`📏 Distance: ${distance.toFixed(2)}m, Device Speed: ${deviceSpeed}km/h, Duration: ${(duration/1000).toFixed(2)}s`);
+    
+    return duration;
+  };
 
-  // Handle position updates for smooth transitions
+  // Update marker to latest position
   useEffect(() => {
     if (positions && positions.length > 0) {
-      const prevLength = lastPositionsLengthRef.current;
-      const newLength = positions.length;
-      lastPositionsLengthRef.current = newLength;
-
-      if (newLength > prevLength && newLength >= 2) {
-        // New point added
-        if (currentSegmentRef.current >= newLength - 1) {
-          // If at the end, reset to the new last segment
-          currentSegmentRef.current = Math.max(0, newLength - 2);
-          console.log(`🛠️ New point added, resetting to segment ${currentSegmentRef.current}`);
-          setCurrentPosition(positions[currentSegmentRef.current]);
-          if (positions.length > currentSegmentRef.current + 1) {
-            const heading = calculateHeading(
-              positions[currentSegmentRef.current][0],
-              positions[currentSegmentRef.current][1],
-              positions[currentSegmentRef.current + 1][0],
-              positions[currentSegmentRef.current + 1][1]
-            );
-            setCurrentHeading(heading);
-            startHeadingRef.current = heading;
-          }
-          setIsAnimating(false); // Trigger restart
-        } else if (isAnimating && progressRef.current > 0) {
-          // Carry over progress for smooth transition
-          const remainingProgress = progressRef.current;
-          console.log(`🔄 Carrying over ${remainingProgress * 100}% progress to segment ${currentSegmentRef.current}`);
-          startPositionRef.current = positions[currentSegmentRef.current];
-          targetPositionRef.current = positions[currentSegmentRef.current + 1];
-          const segmentHeading = calculateHeading(
-            positions[currentSegmentRef.current][0],
-            positions[currentSegmentRef.current][1],
-            positions[currentSegmentRef.current + 1][0],
-            positions[currentSegmentRef.current + 1][1]
-          );
-          targetHeadingRef.current = segmentHeading;
-          startHeadingRef.current = currentHeading;
-          animationStartTimeRef.current = Date.now() - (remainingProgress * animationDurationRef.current);
-        }
-      } else if (newLength < prevLength) {
-        // Handle array shrinkage
-        currentSegmentRef.current = Math.min(currentSegmentRef.current, Math.max(0, newLength - 2));
-        setCurrentPosition(positions[currentSegmentRef.current] || positions[0]);
-        setIsAnimating(false);
-        console.log(`🔙 Array shortened, reset to segment ${currentSegmentRef.current}`);
-      } else if (newLength === 2) {
-        // Handle two points case
-        currentSegmentRef.current = 0; // Animate from p0 to p1
-        setCurrentPosition(positions[0]);
-        if (positions.length > 1) {
+      const latestPosition = positions[positions.length - 1];
+      
+      // If this is the first position, set it directly
+      if (!currentPosition) {
+        setCurrentPosition(latestPosition);
+        setPathIndex(positions.length - 1);
+        setSegmentProgress(1);
+        animationStartIndexRef.current = positions.length - 1;
+        
+        // Calculate heading based on the last two points, if available
+        if (positions.length >= 2) {
+          const prevPosition = positions[positions.length - 2];
           const heading = calculateHeading(
-            positions[0][0], positions[0][1],
-            positions[1][0], positions[1][1]
+            prevPosition[0],
+            prevPosition[1],
+            latestPosition[0],
+            latestPosition[1]
           );
           setCurrentHeading(heading);
-          startHeadingRef.current = heading;
+          console.log(`🧭 Initial heading set to ${heading.toFixed(1)}°`);
+        } else if (device.heading) {
+          setCurrentHeading(parseFloat(device.heading));
+          console.log(`🧭 Using device heading: ${device.heading}°`);
         }
-        setIsAnimating(false); // Trigger restart
-        console.log('🛠️ Only two points, setting segment to 0');
-      } else if (newLength === 1) {
-        // Single point case
-        currentSegmentRef.current = 0;
-        setCurrentPosition(positions[0]);
-        setIsAnimating(false);
-        console.log('🛠️ Only one point, no animation');
+      } else if (lastPositionRef.current && 
+                (lastPositionRef.current[0] !== latestPosition[0] || 
+                 lastPositionRef.current[1] !== latestPosition[1])) {
+        // New position received, calculate animation duration based on distance
+        const startIndex = Math.max(0, positions.length - 2);
+        const endIndex = positions.length - 1;
+        
+        // Calculate animation duration based on distance between points
+        const duration = calculateAnimationDuration(startIndex, endIndex);
+        
+        setIsAnimating(true);
+        setSegmentProgress(0);
+        setPathIndex(startIndex);
+        animationStartIndexRef.current = startIndex;
+        startTimeRef.current = Date.now();
+        lastPositionRef.current = latestPosition;
+        
+        // Calculate heading for the new direction
+        if (positions.length >= 2) {
+          const prevPosition = positions[positions.length - 2];
+          const heading = calculateHeading(
+            prevPosition[0],
+            prevPosition[1],
+            latestPosition[0],
+            latestPosition[1]
+          );
+          setCurrentHeading(heading);
+          console.log(`🧭 New heading set to ${heading.toFixed(1)}°`);
+        }
       }
+      
+      lastPositionRef.current = latestPosition;
     }
-  }, [positions, currentHeading]);
-
-  // Start animation when positions change
-  useEffect(() => {
-    if (positions && positions.length > 1 && currentPosition && !isAnimating) {
-      startAnimation();
-    }
-  }, [positions, currentPosition, isAnimating, startAnimation]);
+  }, [positions, device, currentPosition]);
 
   // Animation loop
   useEffect(() => {
-    if (!isAnimating) return;
-
-    const animate = () => {
-      const now = Date.now();
-      const elapsed = now - animationStartTimeRef.current;
-      const progress = Math.min(elapsed / animationDurationRef.current, 1);
-      progressRef.current = progress; // Store progress for transitions
-
-      if (progress < 1) {
-        const easeProgress = easeLinear(progress); // Use linear easing
-        const lat = startPositionRef.current[0] + (targetPositionRef.current[0] - startPositionRef.current[0]) * easeProgress;
-        const lng = startPositionRef.current[1] + (targetPositionRef.current[1] - startPositionRef.current[1]) * easeProgress;
-        let headingDiff = targetHeadingRef.current - startHeadingRef.current;
-        if (headingDiff > 180) headingDiff -= 360;
-        if (headingDiff < -180) headingDiff += 360;
-        const newHeading = startHeadingRef.current + headingDiff * easeProgress;
+    if (isAnimating && positions && positions.length > 1) {
+      const animate = () => {
+        const elapsed = Date.now() - startTimeRef.current;
+        const totalProgress = Math.min(elapsed / animationDurationRef.current, 1);
+        
+        // Calculate which segment we're on and the progress within that segment
+        const startIndex = animationStartIndexRef.current;
+        const availableSegments = positions.length - 1 - startIndex;
+        const currentSegmentFloat = startIndex + (totalProgress * availableSegments);
+        const currentSegmentIndex = Math.floor(currentSegmentFloat);
+        const progressInSegment = currentSegmentFloat - currentSegmentIndex;
+        
+        setPathIndex(currentSegmentIndex);
+        setSegmentProgress(progressInSegment);
+        
+        // If we've reached the end, stop animating
+        if (currentSegmentIndex >= positions.length - 1) {
+          setCurrentPosition(positions[positions.length - 1]);
+          setIsAnimating(false);
+          console.log(`✅ Animation completed in ${((Date.now() - startTimeRef.current) / 1000).toFixed(2)}s`);
+          return;
+        }
+        
+        // Get the current segment start and end points
+        const segmentStart = positions[currentSegmentIndex];
+        const segmentEnd = positions[currentSegmentIndex + 1];
+        
+        // Linear interpolation within the current segment
+        const lat = segmentStart[0] + (segmentEnd[0] - segmentStart[0]) * progressInSegment;
+        const lng = segmentStart[1] + (segmentEnd[1] - segmentStart[1]) * progressInSegment;
+        
         setCurrentPosition([lat, lng]);
-        setCurrentHeading(newHeading);
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        setCurrentPosition(targetPositionRef.current);
-        setCurrentHeading(targetHeadingRef.current);
-        currentSegmentRef.current = Math.min(currentSegmentRef.current + 1, positions.length - 2); // Move to next segment
-        progressRef.current = 0; // Reset progress
-        setIsAnimating(false);
-        startAnimation();
-        console.log(`🏁 Completed segment, moving to ${currentSegmentRef.current}`);
-      }
-    };
-    
-    animationFrameRef.current = requestAnimationFrame(animate);
-    
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isAnimating, startAnimation, positions]);
-
-  // Linear easing function for constant speed
-  const easeLinear = (t) => t;
+        
+        // Calculate heading based on the current segment
+        const heading = calculateHeading(
+          segmentStart[0],
+          segmentStart[1],
+          segmentEnd[0],
+          segmentEnd[1]
+        );
+        setCurrentHeading(heading);
+        
+        if (totalProgress < 1) {
+          animationRef.current = requestAnimationFrame(animate);
+        } else {
+          setIsAnimating(false);
+        }
+      };
+      
+      animationRef.current = requestAnimationFrame(animate);
+      
+      return () => {
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
+      };
+    }
+  }, [isAnimating, positions]);
 
   if (!currentPosition) {
     return null;
   }
 
   return (
-    <Marker position={currentPosition} icon={createVehicleIcon(color, currentHeading, isSelected)}>
+    <Marker
+      position={currentPosition}
+      icon={createVehicleIcon(color, currentHeading, isSelected)}
+    >
       {children}
     </Marker>
   );
 };
 
 // Map Features Panel Component
-const MapFeaturesPanel = ({ 
-  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, onClose
+const MapFeaturesPanel = ({
+  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, showRealtimePath, setShowRealtimePath, showRoadSnapping, setShowRoadSnapping, onClose
 }) => {
   return (
     <div className="map-features-panel">
@@ -617,8 +637,18 @@ const MapFeaturesPanel = ({
           <input type="checkbox" id="show-paths" checked={showPaths} onChange={() => setShowPaths(!showPaths)} />
           <label htmlFor="show-paths"><MdTimeline /> Show Historical Paths</label>
         </div>
+        <div className="feature-option">
+          <input type="checkbox" id="show-realtime-path" checked={showRealtimePath} onChange={() => setShowRealtimePath(!showRealtimePath)} />
+          <label htmlFor="show-realtime-path"><MdTimeline /> Show Realtime Path (Blue)</label>
+        </div>
+        <div className="feature-option">
+          <input type="checkbox" id="show-road-snapping" checked={showRoadSnapping} onChange={() => setShowRoadSnapping(!showRoadSnapping)} />
+          <label htmlFor="show-road-snapping"><MdTimeline /> Enable Road Snapping</label>
+        </div>
         <div className="feature-info">
-          <p><strong>AIS-140 Features:</strong> Real-time GPS tracking with speed-based animated marker and tooltip.</p>
+          <p><strong>AIS-140 Features:</strong> Real-time GPS tracking with distance-based animated marker.</p>
+          <p><strong>Road Snapping:</strong> Automatically adjusts GPS coordinates to align with actual road network.</p>
+          <p><strong>Smart Speed:</strong> Marker speed adjusts based on distance between GPS points - faster for long distances, slower for short distances.</p>
         </div>
       </div>
     </div>
@@ -669,7 +699,7 @@ const ResizableDivider = ({ onResize }) => {
 
 // Main MapView Component
 function MapView() {
-  const [mapType, setMapType] = useState('map');
+  const [mapType, setMapType] = useState('roadmap');
   const [center, setCenter] = useState([25.621209, 85.170179]); // Default to India (Bihar)
   const [cursorPosition, setCursorPosition] = useState([25.621209, 85.170179]);
   const [devicesData, setDevicesData] = useState({});
@@ -681,9 +711,11 @@ function MapView() {
   const [realtimeData, setRealtimeData] = useState({});
   const [deviceTracks, setDeviceTracks] = useState({}); // Historical tracks
   const [realtimeTracks, setRealtimeTracks] = useState({}); // Live tracks
+  const [snappedTracks, setSnappedTracks] = useState({}); // Road-snapped tracks
   const [firstValidDevice, setFirstValidDevice] = useState(null);
   const [apiStatus, setApiStatus] = useState('checking');
   const [smoothCenter, setSmoothCenter] = useState(center);
+  const [roadSnappingInProgress, setRoadSnappingInProgress] = useState({});
 
   const prevSelectedDeviceIdRef = useRef(null);
   const prevPositionRef = useRef(null);
@@ -698,6 +730,8 @@ function MapView() {
   const [showClusters, setShowClusters] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showPaths, setShowPaths] = useState(false);
+  const [showRealtimePath, setShowRealtimePath] = useState(true); // Default to true for blue path
+  const [showRoadSnapping, setShowRoadSnapping] = useState(true); // Default to true for road snapping
 
   // State for sidebar width
   const [sidebarWidth, setSidebarWidth] = useState(30);
@@ -705,10 +739,12 @@ function MapView() {
   const mapRef = useRef(null);
   const pollingIntervalRef = useRef(null);
 
-  // Map tile URLs
+  // Map tile URLs with Google Maps API key
   const mapLayers = {
-    map: "http://{s}.google.com/vt?lyrs=m&x={x}&y={y}&z={z}",
-    satellite: "http://{s}.google.com/vt?lyrs=s&x={x}&y={y}&z={z}"
+    roadmap: `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`,
+    satellite: `https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`,
+    hybrid: `https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`,
+    terrain: `https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`
   };
 
   // Smooth center animation
@@ -836,6 +872,18 @@ function MapView() {
             [imei]: smoothedTrack
           }));
           console.log(`🛣️ Smoothed historical track: ${smoothedTrack.length} points (from ${rawTrack.length} raw)`);
+          
+          // Apply road snapping if enabled
+          if (showRoadSnapping) {
+            setRoadSnappingInProgress(prev => ({ ...prev, [imei]: true }));
+            const snappedTrack = await batchSnapToRoads(smoothedTrack);
+            setSnappedTracks(prev => ({
+              ...prev,
+              [imei]: snappedTrack
+            }));
+            setRoadSnappingInProgress(prev => ({ ...prev, [imei]: false }));
+            console.log(`🛣️ Road-snapped track for ${imei}: ${snappedTrack.length} points`);
+          }
         }
       } else {
         throw new Error(data.error?.message || 'Unknown error');
@@ -858,7 +906,7 @@ function MapView() {
           fetchRealtimeLocations().then(realtimeObject => {
             setRealtimeData(realtimeObject);
           });
-        }, 20000); // 20 seconds
+        }, 5000); // Changed to 5 seconds (5000ms)
       } else {
         setLoading(false);
         setError('Failed to connect to AIS-140 API. Please check if the API server is running.');
@@ -915,6 +963,19 @@ function MapView() {
               updatedTracks[imei] = [...updatedTracks[imei], newPoint].slice(-10); // Limit to 10 points
               updatedTracks[imei] = smoothPath(updatedTracks[imei], 3);
               console.log(`🛣️ Updated realtime track for ${imei}: ${updatedTracks[imei].length} points`);
+              
+              // Apply road snapping to realtime track if enabled and we have enough points
+              if (showRoadSnapping && updatedTracks[imei].length >= 2) {
+                setRoadSnappingInProgress(prev => ({ ...prev, [imei]: true }));
+                batchSnapToRoads(updatedTracks[imei]).then(snappedTrack => {
+                  setSnappedTracks(prev => ({
+                    ...prev,
+                    [imei]: snappedTrack
+                  }));
+                  setRoadSnappingInProgress(prev => ({ ...prev, [imei]: false }));
+                  console.log(`🛣️ Road-snapped realtime track for ${imei}: ${snappedTrack.length} points`);
+                });
+              }
               lastDataUpdateRef.current[imei] = currentUpdate;
             }
           }
@@ -923,7 +984,7 @@ function MapView() {
       });
       return updated;
     });
-  }, [realtimeData]);
+  }, [realtimeData, showRoadSnapping]);
 
   // Format date and time
   const formatDateTime = (dateStr) => {
@@ -962,7 +1023,7 @@ function MapView() {
     setSidebarWidth(newWidth);
   };
 
-  // Center map on animated marker position
+  // Center map on selected device position
   useEffect(() => {
     if (selectedDeviceId && devicesData[selectedDeviceId] && !isUserInteracting) {
       const device = devicesData[selectedDeviceId];
@@ -1024,8 +1085,8 @@ function MapView() {
       <VehicleIndicator devices={devicesData} />
       <div className="main-content">
         <div className="sidebar" style={{ width: `${sidebarWidth}%` }}>
-          <VehicleTable 
-            devices={devicesData} 
+          <VehicleTable
+            devices={devicesData}
             onDeviceSelect={handleDeviceSelect}
             selectedDeviceId={selectedDeviceId}
             loading={loading}
@@ -1041,11 +1102,17 @@ function MapView() {
           </div>
           <div className="map-controls-bottom">
             <div className="map-type-controls">
-              <button className={`map-type-btn ${mapType === 'map' ? 'active' : ''}`} onClick={() => setMapType('map')}>
+              <button className={`map-type-btn ${mapType === 'roadmap' ? 'active' : ''}`} onClick={() => setMapType('roadmap')}>
                 Map
               </button>
               <button className={`map-type-btn ${mapType === 'satellite' ? 'active' : ''}`} onClick={() => setMapType('satellite')}>
                 Satellite
+              </button>
+              <button className={`map-type-btn ${mapType === 'hybrid' ? 'active' : ''}`} onClick={() => setMapType('hybrid')}>
+                Hybrid
+              </button>
+              <button className={`map-type-btn ${mapType === 'terrain' ? 'active' : ''}`} onClick={() => setMapType('terrain')}>
+                Terrain
               </button>
             </div>
             <div className="connection-status">
@@ -1069,7 +1136,7 @@ function MapView() {
               console.log('🗺️ Map created successfully with center:', smoothCenter);
             }}
           >
-            <TileLayer url={mapLayers[mapType]} maxZoom={20} subdomains={['mt0', 'mt1', 'mt2', 'mt3']} />
+            <TileLayer url={mapLayers[mapType]} maxZoom={20} />
             <ScaleControl position="bottomleft" />
             {Object.entries(devicesData).map(([imei, device]) => {
               const coords = getCoordinatesFromDevice(device);
@@ -1080,40 +1147,51 @@ function MapView() {
                 const lastTwo = realtimeTracks[imei].slice(-2);
                 heading = calculateHeading(lastTwo[0][0], lastTwo[0][1], lastTwo[1][0], lastTwo[1][1]);
               }
+              const isSelected = selectedDeviceId === imei;
+              
+              // Determine which track to use (snapped or original)
+              const historicalTrack = showRoadSnapping && snappedTracks[imei] ? snappedTracks[imei] : deviceTracks[imei];
+              const realtimeTrack = showRoadSnapping && snappedTracks[imei] ? snappedTracks[imei] : realtimeTracks[imei];
+              
               return (
                 <React.Fragment key={imei}>
-                  {showPaths && deviceTracks[imei] && deviceTracks[imei].length > 1 && (
-                    <Polyline 
-                      positions={deviceTracks[imei]} 
-                      color={selectedDeviceId === imei ? "#4CAF50" : "#81C784"} 
-                      weight={selectedDeviceId === imei ? 5 : 3} 
-                      opacity={selectedDeviceId === imei ? 0.9 : 0.7}
+                  {/* Historical path (green) */}
+                  {showPaths && historicalTrack && historicalTrack.length > 1 && (
+                    <Polyline
+                      positions={historicalTrack}
+                      color={isSelected ? "#4CAF50" : "#81C784"}
+                      weight={isSelected ? 5 : 3}
+                      opacity={isSelected ? 0.9 : 0.7}
                       smoothFactor={1}
-                      className={selectedDeviceId === imei ? "selected-path" : "vehicle-path"}
+                      className={isSelected ? "selected-path" : "vehicle-path"}
                     />
                   )}
-                  {realtimeTracks[imei] && realtimeTracks[imei].length > 1 && (
-                    <Polyline 
-                      positions={realtimeTracks[imei]} 
-                      color={selectedDeviceId === imei ? "#2196F3" : "#64B5F6"} 
-                      weight={selectedDeviceId === imei ? 5 : 3} 
-                      opacity={selectedDeviceId === imei ? 0.9 : 0.7}
+                  {/* Realtime path (blue) - NEW */}
+                  {showRealtimePath && realtimeTrack && realtimeTrack.length > 1 && (
+                    <Polyline
+                      positions={realtimeTrack}
+                      color={isSelected ? "#1976D2" : "#2196F3"}
+                      weight={isSelected ? 5 : 3}
+                      opacity={isSelected ? 0.9 : 0.7}
                       smoothFactor={1}
-                      className={selectedDeviceId === imei ? "selected-path-trace" : "path-trace"}
+                      className={isSelected ? "selected-realtime-path" : "realtime-path"}
+                      dashArray="10, 5"
                     />
                   )}
-                  {selectedDeviceId === imei && realtimeTracks[imei] && realtimeTracks[imei].length > 0 ? (
+                  {isSelected && realtimeTrack && realtimeTrack.length > 0 ? (
                     <PathAnimationMarker
-                      positions={realtimeTracks[imei]}
+                      positions={realtimeTrack}
                       color="#2196F3"
                       isSelected={true}
-                      device={device} // Pass device for speed and timing
-                      onAnimationComplete={() => {
-                        console.log('Path animation completed for device:', imei);
-                      }}
+                      device={device}
                     >
                       <Tooltip permanent direction="top" offset={[0, -24]} opacity={0.9}>
                         {device.device_name || `M66-${imei.slice(-4)}`}
+                        {showRoadSnapping && roadSnappingInProgress[imei] && (
+                          <span style={{ marginLeft: '5px', color: '#FF9800' }}>
+                            🛣️ Snapping...
+                          </span>
+                        )}
                       </Tooltip>
                       <Popup>
                         <div className="popup-content">
@@ -1129,22 +1207,33 @@ function MapView() {
                           <p><strong>GSM Signal:</strong> {device.gsm_signal_strength || 0}</p>
                           <p><strong>Satellites:</strong> {device.satellites || 0}</p>
                           <p><strong>Network:</strong> {device.network_operator || 'N/A'}</p>
+                          <p><strong>Road Snapping:</strong> {showRoadSnapping ? 'Enabled' : 'Disabled'}</p>
+                          {showRoadSnapping && snappedTracks[imei] && (
+                            <p><strong>Snapped Points:</strong> {snappedTracks[imei].length}</p>
+                          )}
                           <hr/>
                           <p style={{fontSize: '11px'}}><strong>Raw Packet:</strong> {device.raw_packet ? device.raw_packet.substring(0, 80) + '...' : 'N/A'}</p>
                         </div>
                       </Popup>
                     </PathAnimationMarker>
                   ) : (
+                    // For non-selected devices, use a simpler marker that's positioned at the latest point
                     <Marker
-                      position={currentPosition}
+                      position={realtimeTrack && realtimeTrack.length > 0 ? 
+                        realtimeTrack[realtimeTrack.length - 1] : currentPosition}
                       icon={createVehicleIcon(
-                        selectedDeviceId === imei ? "#2196F3" : "#3388ff",
+                        isSelected ? "#2196F3" : "#3388ff",
                         heading,
-                        selectedDeviceId === imei
+                        isSelected
                       )}
                     >
                       <Tooltip permanent direction="top" offset={[0, -24]} opacity={0.9}>
                         {device.device_name || `M66-${imei.slice(-4)}`}
+                        {showRoadSnapping && roadSnappingInProgress[imei] && (
+                          <span style={{ marginLeft: '5px', color: '#FF9800' }}>
+                            🛣️
+                          </span>
+                        )}
                       </Tooltip>
                       <Popup>
                         <div className="popup-content">
@@ -1160,6 +1249,10 @@ function MapView() {
                           <p><strong>GSM Signal:</strong> {device.gsm_signal_strength || 0}</p>
                           <p><strong>Satellites:</strong> {device.satellites || 0}</p>
                           <p><strong>Network:</strong> {device.network_operator || 'N/A'}</p>
+                          <p><strong>Road Snapping:</strong> {showRoadSnapping ? 'Enabled' : 'Disabled'}</p>
+                          {showRoadSnapping && snappedTracks[imei] && (
+                            <p><strong>Snapped Points:</strong> {snappedTracks[imei].length}</p>
+                          )}
                           <hr/>
                           <p style={{fontSize: '11px'}}><strong>Raw Packet:</strong> {device.raw_packet ? device.raw_packet.substring(0, 80) + '...' : 'N/A'}</p>
                         </div>
@@ -1174,13 +1267,17 @@ function MapView() {
         </div>
       </div>
       {showMapFeaturesPanel && (
-        <MapFeaturesPanel 
+        <MapFeaturesPanel
           showClusters={showClusters}
           setShowClusters={setShowClusters}
-          showHeatmap={showHeatmap}
+          showHeatmap={setShowHeatmap}
           setShowHeatmap={setShowHeatmap}
-          showPaths={showPaths}
+          showPaths={setShowPaths}
           setShowPaths={setShowPaths}
+          showRealtimePath={setShowRealtimePath}
+          setShowRealtimePath={setShowRealtimePath}
+          showRoadSnapping={setShowRoadSnapping}
+          setShowRoadSnapping={setShowRoadSnapping}
           onClose={() => setShowMapFeaturesPanel(false)}
         />
       )}

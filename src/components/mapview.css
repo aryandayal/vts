@@ -176,6 +176,9 @@ html, body {
   top: 20px;
   right: 20px;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .control-btn {
@@ -340,7 +343,7 @@ html, body {
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
-  transition: all 0.5s ease;
+  transition: all 0.5s ease-out;
 }
 
 .selected-path {
@@ -351,7 +354,32 @@ html, body {
   animation: selectedPathGlow 2s ease-in-out infinite alternate;
 }
 
+/* Blue realtime path styles */
+.realtime-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  transition: all 0.5s ease-out;
+}
+
+.selected-realtime-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.3));
+  animation: selectedRealtimePathGlow 2s ease-in-out infinite alternate;
+}
+
 @keyframes selectedPathGlow {
+  from {
+    filter: drop-shadow(0 0 3px rgba(76, 175, 80, 0.4));
+  }
+  to {
+    filter: drop-shadow(0 0 6px rgba(76, 175, 80, 0.6));
+  }
+}
+
+@keyframes selectedRealtimePathGlow {
   from {
     filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.4));
   }
@@ -360,7 +388,7 @@ html, body {
   }
 }
 
-/* Path trace animation for real-time polyline */
+/* Path trace animation for real-time polyline (unused but retained for potential future use) */
 .path-trace {
   stroke-dasharray: 5, 5;
   animation: dash 20s linear infinite;
@@ -372,7 +400,7 @@ html, body {
   }
 }
 
-/* Selected path trace for real-time polyline */
+/* Selected path trace for real-time polyline (unused but retained for potential future use) */
 .selected-path-trace {
   stroke-dasharray: 10, 5;
   animation: selectedDash 20s linear infinite;
@@ -389,21 +417,90 @@ html, body {
 .custom-vehicle-marker {
   background: transparent !important;
   border: none !important;
-  transition: transform 0.5s ease-in-out;
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
 }
 
 .custom-vehicle-marker:hover {
   transform: scale(1.1);
 }
 
-/* Path animation marker styles */
+/* Vehicle icon container for smooth movement */
+.vehicle-icon-container {
+  position: relative;
+  transform-origin: center bottom;
+}
+
+.vehicle-icon-rotation {
+  position: relative;
+  transform-origin: center center;
+  transition: transform 0.5s ease-out; /* Smooth transition for rotation */
+}
+
+.vehicle-icon-body {
+  position: relative;
+  transform-origin: center center;
+}
+
+/* Path progress bar styles */
+.path-progress-bar {
+  flex: 1;
+  height: 8px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0 10px;
+}
+
+.path-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196F3, #1976D2);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* Enhanced marker trail effect */
+.marker-trail {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.marker-trail::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(33, 150, 243, 0.3) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  animation: trailPulse 2s ease-in-out infinite;
+}
+
+@keyframes trailPulse {
+  0% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  50% {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  100% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+}
+
+/* Path animation marker styles with distance-based speed */
 .path-animation-marker {
   z-index: 1000;
-  transition: transform 0.5s ease-in-out;
+  transition: transform 0.3s ease-out; /* Dynamic transition based on distance */
 }
 
 .path-animation-marker .custom-vehicle-marker {
-  animation: markerPulse 2s ease-in-out infinite;
+  animation: markerPulse 2s ease-in-out infinite; /* Consistent pulse animation */
 }
 
 @keyframes markerPulse {
@@ -421,7 +518,32 @@ html, body {
   }
 }
 
-/* Animation progress indicator */
+/* Continuous path styles */
+.continuous-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  transition: all 0.5s ease-out;
+}
+
+.selected-continuous-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.3));
+  animation: selectedContinuousPathGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes selectedContinuousPathGlow {
+  from {
+    filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.4));
+  }
+  to {
+    filter: drop-shadow(0 0 6px rgba(33, 150, 243, 0.6));
+  }
+}
+
+/* Animation progress indicator for distance-based speed */
 .animation-progress {
   position: absolute;
   bottom: 80px;
@@ -451,7 +573,7 @@ html, body {
   height: 100%;
   background: linear-gradient(90deg, #2196F3, #1976D2);
   border-radius: 3px;
-  transition: width 20s linear;
+  transition: width 0.3s linear; /* Dynamic transition based on distance */
   position: relative;
 }
 
@@ -566,6 +688,18 @@ html, body {
   width: 18px;
   height: 18px;
   cursor: pointer;
+}
+
+.feature-option input[type="range"] {
+  flex: 1;
+  margin: 0 10px;
+}
+
+.feature-option span {
+  font-size: 12px;
+  color: #6c757d;
+  min-width: 50px;
+  text-align: right;
 }
 
 .feature-info {
@@ -735,16 +869,39 @@ html, body {
   text-align: center;
 }
 
+/* Road snapping indicator with distance-based speed */
+.road-snapping-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 12px;
+  border-radius: 20px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  color: #495057;
+  margin-left: 10px;
+}
+
+.snapping-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: #3498db;
+  animation: spin 2s linear infinite; /* Consistent animation speed */
+}
+
 /* Mobile view styles */
 @media (max-width: 768px) {
   .resizable-divider {
     display: none;
   }
-  
+
   .main-content {
     flex-direction: column;
   }
-  
+
   .sidebar {
     width: 100% !important;
     height: 60%;
@@ -752,75 +909,109 @@ html, body {
     border-bottom: 1px solid #e0e0e0;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   }
-  
+
   .map-container {
     width: 100% !important;
     height: 40%;
   }
-  
+
   .vehicle-table {
     font-size: 11px;
     min-width: 100%; /* Ensure table fits in mobile view */
   }
-  
+
   .vehicle-table th,
   .vehicle-table td {
     padding: 6px 8px;
     max-width: 100px; /* Reduce max-width for mobile */
   }
-  
+
   .vehicle-table th {
     font-size: 10px;
   }
-  
+
   .map-controls-bottom {
     bottom: 10px;
     left: 10px;
-    right: 10px;
     transform: none;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
     padding: 8px 12px;
   }
-  
+
   .map-controls-top {
     top: 10px;
     right: 10px;
   }
-  
+
   .control-btn {
-    width: 35px;
-    height: 35px;
+    width: 36px;
+    height: 36px;
     font-size: 16px;
   }
-  
+
+  .map-type-controls {
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .map-type-btn {
     padding: 6px 12px;
     font-size: 12px;
   }
-  
+
   .cursor-info {
     font-size: 10px;
   }
-  
+
   .map-features-panel {
     width: 100%;
     height: 50%;
     top: auto;
     bottom: 0;
-    transform: translateX(0);
+    transform: translateY(100%);
     border-radius: 12px 12px 0 0;
   }
-  
+
+  .map-features-panel.open {
+    transform: translateY(0);
+  }
+
   .feature-option {
     padding: 10px;
   }
-  
+
   .feature-option label {
-    font-size: 13px;
+    font-size: 12px;
   }
-  
-  .custom-vehicle-marker {
-    transform: scale(0.8); /* Slightly smaller markers on mobile */
+
+  .feature-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+
+  .feature-info {
+    padding: 10px;
+  }
+
+  .feature-info p {
+    font-size: 11px;
+  }
+
+  .street-view-panel {
+    width: 95%;
+    height: 50%;
+    max-height: 400px;
+  }
+
+  .road-snapping-indicator {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+
+  .snapping-spinner {
+    width: 12px;
+    height: 12px;
   }
 }
