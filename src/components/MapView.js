@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Popup, ScaleControl, useMap, useMapEvents, Pol
 import L from 'leaflet';
 import { BsFillTruckFrontFill } from "react-icons/bs";
 import { Helmet } from "react-helmet";
-import { MdLayers, MdWhatshot, MdTimeline } from "react-icons/md";
+import { MdLayers, MdWhatshot, MdTimeline, MdCenterFocusStrong, MdInfo } from "react-icons/md";
 
 // Import Leaflet CSS for proper rendering
 import 'leaflet/dist/leaflet.css';
@@ -202,6 +202,29 @@ const smoothPath = (positions, windowSize = 3) => {
   return smoothed;
 };
 
+// Calculate the center point of multiple coordinates
+const calculateCenterPoint = (coordinates) => {
+  if (!coordinates || coordinates.length === 0) return null;
+  
+  let sumLat = 0, sumLng = 0;
+  let validCount = 0;
+  
+  coordinates.forEach(coord => {
+    if (coord && coord.latitude && coord.longitude) {
+      sumLat += parseFloat(coord.latitude);
+      sumLng += parseFloat(coord.longitude);
+      validCount++;
+    }
+  });
+  
+  if (validCount === 0) return null;
+  
+  return {
+    latitude: sumLat / validCount,
+    longitude: sumLng / validCount
+  };
+};
+
 // Status Indicator Component
 const StatusIndicator = ({ status }) => {
   const color = status === "running" ? "green" : status === "idle" ? "orange" : status === "connected" ? "green" : "red";
@@ -378,7 +401,7 @@ const createVehicleIcon = (color = '#3388ff', heading = 0, isSelected = false) =
   return L.divIcon({
     className: 'custom-vehicle-marker',
     html: `
-      <div class="vehicle-icon-container" style="width: ${size}px; height: ${size}px; position: relative;">
+      <div class="vehicle-icon-container" style="width: ${size}px; height: ${size}px; position: relative; cursor: pointer;">
         <div class="vehicle-icon-rotation" style="width: ${size}px; height: ${size}px; position: relative; transform: rotate(${rotation}deg);">
           <div class="vehicle-icon-body" style="width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
             ${svgIcon}
@@ -409,6 +432,7 @@ const PathAnimationMarker = ({
   isSelected,
   device,
   children,
+  onMarkerClick
 }) => {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [currentHeading, setCurrentHeading] = useState(0);
@@ -608,6 +632,13 @@ const PathAnimationMarker = ({
     <Marker
       position={currentPosition}
       icon={createVehicleIcon(color, currentHeading, isSelected)}
+      eventHandlers={{
+        click: () => {
+          if (onMarkerClick) {
+            onMarkerClick(device);
+          }
+        }
+      }}
     >
       {children}
     </Marker>
@@ -616,7 +647,7 @@ const PathAnimationMarker = ({
 
 // Map Features Panel Component
 const MapFeaturesPanel = ({
-  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, showRealtimePath, setShowRealtimePath, showRoadSnapping, setShowRoadSnapping, onClose
+  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, showRealtimePath, setShowRealtimePath, showRoadSnapping, setShowRoadSnapping, autoCenter, setAutoCenter, onClose
 }) => {
   return (
     <div className="map-features-panel">
@@ -625,6 +656,10 @@ const MapFeaturesPanel = ({
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
       <div className="panel-content">
+        <div className="feature-option">
+          <input type="checkbox" id="auto-center" checked={autoCenter} onChange={() => setAutoCenter(!autoCenter)} />
+          <label htmlFor="auto-center"><MdCenterFocusStrong /> Auto Center on Selected Vehicle</label>
+        </div>
         <div className="feature-option">
           <input type="checkbox" id="show-clusters" checked={showClusters} onChange={() => setShowClusters(!showClusters)} />
           <label htmlFor="show-clusters"><MdLayers /> Show Clusters</label>
@@ -647,6 +682,8 @@ const MapFeaturesPanel = ({
         </div>
         <div className="feature-info">
           <p><strong>AIS-140 Features:</strong> Real-time GPS tracking with distance-based animated marker.</p>
+          <p><strong>Auto Center:</strong> Automatically centers the map on the selected vehicle and keeps it in view as it moves.</p>
+          <p><strong>Marker Details:</strong> Click on any vehicle marker to view detailed information about that vehicle.</p>
           <p><strong>Road Snapping:</strong> Automatically adjusts GPS coordinates to align with actual road network.</p>
           <p><strong>Smart Speed:</strong> Marker speed adjusts based on distance between GPS points - faster for long distances, slower for short distances.</p>
         </div>
@@ -704,6 +741,7 @@ function MapView() {
   const [cursorPosition, setCursorPosition] = useState([25.621209, 85.170179]);
   const [devicesData, setDevicesData] = useState({});
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [clickedMarkerDevice, setClickedMarkerDevice] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(12);
   const [isUserInteracting, setIsUserInteracting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -732,6 +770,7 @@ function MapView() {
   const [showPaths, setShowPaths] = useState(false);
   const [showRealtimePath, setShowRealtimePath] = useState(true); // Default to true for blue path
   const [showRoadSnapping, setShowRoadSnapping] = useState(true); // Default to true for road snapping
+  const [autoCenter, setAutoCenter] = useState(true); // Default to true for auto-centering
 
   // State for sidebar width
   const [sidebarWidth, setSidebarWidth] = useState(30);
@@ -919,15 +958,42 @@ function MapView() {
     };
   }, []);
 
-  // Update map center for first valid device
+  // Calculate center point of all devices
+  const calculateAllDevicesCenter = () => {
+    const validCoordinates = Object.values(devicesData)
+      .map(device => getCoordinatesFromDevice(device))
+      .filter(coords => coords !== null);
+    
+    if (validCoordinates.length === 0) return null;
+    
+    const centerPoint = calculateCenterPoint(validCoordinates);
+    return centerPoint ? [centerPoint.latitude, centerPoint.longitude] : null;
+  };
+
+  // Update map center for first valid device or all devices center
   useEffect(() => {
-    if (firstValidDevice && !initialPositionSetRef.current && mapRef.current) {
-      setCenter([firstValidDevice.latitude, firstValidDevice.longitude]);
-      mapRef.current.setView([firstValidDevice.latitude, firstValidDevice.longitude], zoomLevel);
-      initialPositionSetRef.current = true;
-      console.log('🎯 Map centered on first valid device:', firstValidDevice);
+    if (!initialPositionSetRef.current && mapRef.current) {
+      let newCenter = null;
+      
+      if (firstValidDevice) {
+        // If we have a first valid device, center on it
+        newCenter = [firstValidDevice.latitude, firstValidDevice.longitude];
+        console.log('🎯 Map centered on first valid device:', firstValidDevice);
+      } else {
+        // Otherwise, try to center on all devices
+        newCenter = calculateAllDevicesCenter();
+        if (newCenter) {
+          console.log('🎯 Map centered on all devices center:', newCenter);
+        }
+      }
+      
+      if (newCenter) {
+        setCenter(newCenter);
+        mapRef.current.setView(newCenter, zoomLevel);
+        initialPositionSetRef.current = true;
+      }
     }
-  }, [firstValidDevice, zoomLevel]);
+  }, [firstValidDevice, devicesData, zoomLevel]);
 
   // Fetch historical track when device is selected and showPaths is true
   useEffect(() => {
@@ -1018,14 +1084,21 @@ function MapView() {
     }
   };
 
+  // Handle marker click
+  const handleMarkerClick = (device) => {
+    setClickedMarkerDevice(device);
+    setSelectedDeviceId(device.imei);
+    console.log('📍 Marker clicked:', device.device_name || device.imei);
+  };
+
   // Handle sidebar resize
   const handleSidebarResize = (newWidth) => {
     setSidebarWidth(newWidth);
   };
 
-  // Center map on selected device position
+  // Center map on selected device position with auto-center feature
   useEffect(() => {
-    if (selectedDeviceId && devicesData[selectedDeviceId] && !isUserInteracting) {
+    if (selectedDeviceId && devicesData[selectedDeviceId] && autoCenter && !isUserInteracting) {
       const device = devicesData[selectedDeviceId];
       const coords = getCoordinatesFromDevice(device);
       if (!coords) {
@@ -1038,20 +1111,29 @@ function MapView() {
       if (positionUpdateTimeoutRef.current) {
         clearTimeout(positionUpdateTimeoutRef.current);
       }
-      if (prevSelectedDeviceIdRef.current !== selectedDeviceId) {
+      
+      // Always center on selected device if auto-center is enabled
+      if (autoCenter) {
         const map = mapRef.current;
         if (map) {
-          map.flyTo(currentPosition, zoomLevel, { animate: true, duration: 1.0 });
-          setCenter(currentPosition);
-          prevPositionRef.current = currentPosition;
-          prevSelectedDeviceIdRef.current = selectedDeviceId;
-          lastUpdateTimeRef.current = now;
-          initialPositionSetRef.current = true;
-          console.log('🎯 Map centered on new device selection:', { selectedDeviceId, coords });
+          // Check if the device is already in view
+          const bounds = map.getBounds();
+          const isInView = bounds.contains([latitude, longitude]);
+          
+          // If not in view or it's a new device selection, center on it
+          if (!isInView || prevSelectedDeviceIdRef.current !== selectedDeviceId) {
+            map.flyTo(currentPosition, zoomLevel, { animate: true, duration: 1.0 });
+            setCenter(currentPosition);
+            prevPositionRef.current = currentPosition;
+            prevSelectedDeviceIdRef.current = selectedDeviceId;
+            lastUpdateTimeRef.current = now;
+            initialPositionSetRef.current = true;
+            console.log('🎯 Map auto-centered on selected device:', { selectedDeviceId, coords });
+          }
         }
       }
     }
-  }, [selectedDeviceId, devicesData, zoomLevel, isUserInteracting]);
+  }, [selectedDeviceId, devicesData, zoomLevel, isUserInteracting, autoCenter]);
 
   // Map events
   function MapEvents() {
@@ -1096,6 +1178,9 @@ function MapView() {
         <ResizableDivider onResize={handleSidebarResize} />
         <div className="map-container" style={{ width: `${100 - sidebarWidth}%` }}>
           <div className="map-controls-top">
+            <button className={`control-btn ${autoCenter ? 'active' : ''}`} onClick={() => setAutoCenter(!autoCenter)} title="Auto Center on Selected Vehicle">
+              <MdCenterFocusStrong />
+            </button>
             <button className={`control-btn ${showMapFeaturesPanel ? 'active' : ''}`} onClick={() => setShowMapFeaturesPanel(!showMapFeaturesPanel)} title="Map Features">
               <MdLayers />
             </button>
@@ -1184,6 +1269,7 @@ function MapView() {
                       color="#2196F3"
                       isSelected={true}
                       device={device}
+                      onMarkerClick={handleMarkerClick}
                     >
                       <Tooltip permanent direction="top" offset={[0, -24]} opacity={0.9}>
                         {device.device_name || `M66-${imei.slice(-4)}`}
@@ -1195,24 +1281,56 @@ function MapView() {
                       </Tooltip>
                       <Popup>
                         <div className="popup-content">
-                          <h3>Device: {device.device_name || `M66-${imei.slice(-4)}`}</h3>
-                          <p><strong>IMEI:</strong> {imei}</p>
-                          <p><strong>Vehicle Reg:</strong> {device.vehicle_registration || 'N/A'}</p>
-                          <p><strong>Location:</strong> {safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</p>
-                          <p><strong>Speed:</strong> {device.speed ? `${device.speed} km/h` : 'N/A'}</p>
-                          <p><strong>Heading:</strong> {heading ? `${heading.toFixed(1)}°` : 'N/A'}</p>
-                          <p><strong>Altitude:</strong> {device.altitude ? `${device.altitude}m` : 'N/A'}</p>
-                          <p><strong>Last Update:</strong> {formatDateTime(device.last_update || device.last_seen)}</p>
-                          <p><strong>Battery:</strong> {device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</p>
-                          <p><strong>GSM Signal:</strong> {device.gsm_signal_strength || 0}</p>
-                          <p><strong>Satellites:</strong> {device.satellites || 0}</p>
-                          <p><strong>Network:</strong> {device.network_operator || 'N/A'}</p>
-                          <p><strong>Road Snapping:</strong> {showRoadSnapping ? 'Enabled' : 'Disabled'}</p>
-                          {showRoadSnapping && snappedTracks[imei] && (
-                            <p><strong>Snapped Points:</strong> {snappedTracks[imei].length}</p>
-                          )}
-                          <hr/>
-                          <p style={{fontSize: '11px'}}><strong>Raw Packet:</strong> {device.raw_packet ? device.raw_packet.substring(0, 80) + '...' : 'N/A'}</p>
+                          <div className="popup-header">
+                            <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
+                            <button 
+                              className="popup-close-btn" 
+                              onClick={() => setClickedMarkerDevice(null)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <div className="popup-body">
+                            <div className="popup-info-grid">
+                              <div className="info-row">
+                                <span className="info-label">IMEI:</span>
+                                <span className="info-value">{imei}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Vehicle Registration:</span>
+                                <span className="info-value">{device.vehicle_registration || 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Status:</span>
+                                <span className="info-value">
+                                  <StatusIndicator status={device.is_active ? (device.speed > 0 ? "running" : "idle") : "stopped"} />
+                                  <span style={{ marginLeft: '8px' }}>
+                                    {device.is_active ? (device.speed > 0 ? 'Running' : 'Idle') : 'Stopped'}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Location:</span>
+                                <span className="info-value">{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Speed:</span>
+                                <span className="info-value">{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Last Updated:</span>
+                                <span className="info-value">{formatDateTime(device.last_update || device.last_seen)}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Battery:</span>
+                                <span className="info-value">{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Network:</span>
+                                <span className="info-value">{device.network_operator || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </Popup>
                     </PathAnimationMarker>
@@ -1226,6 +1344,11 @@ function MapView() {
                         heading,
                         isSelected
                       )}
+                      eventHandlers={{
+                        click: () => {
+                          handleMarkerClick(device);
+                        }
+                      }}
                     >
                       <Tooltip permanent direction="top" offset={[0, -24]} opacity={0.9}>
                         {device.device_name || `M66-${imei.slice(-4)}`}
@@ -1237,24 +1360,56 @@ function MapView() {
                       </Tooltip>
                       <Popup>
                         <div className="popup-content">
-                          <h3>Device: {device.device_name || `M66-${imei.slice(-4)}`}</h3>
-                          <p><strong>IMEI:</strong> {imei}</p>
-                          <p><strong>Vehicle Reg:</strong> {device.vehicle_registration || 'N/A'}</p>
-                          <p><strong>Location:</strong> {safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</p>
-                          <p><strong>Speed:</strong> {device.speed ? `${device.speed} km/h` : 'N/A'}</p>
-                          <p><strong>Heading:</strong> {heading ? `${heading.toFixed(1)}°` : 'N/A'}</p>
-                          <p><strong>Altitude:</strong> {device.altitude ? `${device.altitude}m` : 'N/A'}</p>
-                          <p><strong>Last Update:</strong> {formatDateTime(device.last_update || device.last_seen)}</p>
-                          <p><strong>Battery:</strong> {device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</p>
-                          <p><strong>GSM Signal:</strong> {device.gsm_signal_strength || 0}</p>
-                          <p><strong>Satellites:</strong> {device.satellites || 0}</p>
-                          <p><strong>Network:</strong> {device.network_operator || 'N/A'}</p>
-                          <p><strong>Road Snapping:</strong> {showRoadSnapping ? 'Enabled' : 'Disabled'}</p>
-                          {showRoadSnapping && snappedTracks[imei] && (
-                            <p><strong>Snapped Points:</strong> {snappedTracks[imei].length}</p>
-                          )}
-                          <hr/>
-                          <p style={{fontSize: '11px'}}><strong>Raw Packet:</strong> {device.raw_packet ? device.raw_packet.substring(0, 80) + '...' : 'N/A'}</p>
+                          <div className="popup-header">
+                            <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
+                            <button 
+                              className="popup-close-btn" 
+                              onClick={() => setClickedMarkerDevice(null)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <div className="popup-body">
+                            <div className="popup-info-grid">
+                              <div className="info-row">
+                                <span className="info-label">IMEI:</span>
+                                <span className="info-value">{imei}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Vehicle Registration:</span>
+                                <span className="info-value">{device.vehicle_registration || 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Status:</span>
+                                <span className="info-value">
+                                  <StatusIndicator status={device.is_active ? (device.speed > 0 ? "running" : "idle") : "stopped"} />
+                                  <span style={{ marginLeft: '8px' }}>
+                                    {device.is_active ? (device.speed > 0 ? 'Running' : 'Idle') : 'Stopped'}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Location:</span>
+                                <span className="info-value">{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Speed:</span>
+                                <span className="info-value">{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Last Updated:</span>
+                                <span className="info-value">{formatDateTime(device.last_update || device.last_seen)}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Battery:</span>
+                                <span className="info-value">{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
+                              </div>
+                              <div className="info-row">
+                                <span className="info-label">Network:</span>
+                                <span className="info-value">{device.network_operator || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -1278,6 +1433,8 @@ function MapView() {
           setShowRealtimePath={setShowRealtimePath}
           showRoadSnapping={setShowRoadSnapping}
           setShowRoadSnapping={setShowRoadSnapping}
+          autoCenter={autoCenter}
+          setAutoCenter={setAutoCenter}
           onClose={() => setShowMapFeaturesPanel(false)}
         />
       )}
