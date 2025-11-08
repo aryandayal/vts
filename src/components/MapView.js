@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Popup, ScaleControl, useMap, useMapEvents, Pol
 import L from 'leaflet';
 import { BsFillTruckFrontFill } from "react-icons/bs";
 import { Helmet } from "react-helmet";
-import { MdLayers, MdWhatshot, MdTimeline, MdCenterFocusStrong, MdInfo } from "react-icons/md";
+import { MdLayers, MdWhatshot, MdTimeline, MdCenterFocusStrong, MdInfo, MdZoomIn, MdZoomOut } from "react-icons/md";
 
 // Import Leaflet CSS for proper rendering
 import 'leaflet/dist/leaflet.css';
@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://3.109.186.142:3000';
 const GOOGLE_MAPS_API_KEY = 'AIzaSyB7GMusWIecrMygztw8BEGbc4zKhBru8N8';
 
 console.log('🌐 MapView using API:', API_BASE_URL);
@@ -174,6 +174,13 @@ const getCoordinatesFromDevice = (device) => {
 
 // Calculate heading between two points
 const calculateHeading = (fromLat, fromLng, toLat, toLng) => {
+  // Check if inputs are valid numbers
+  if (fromLat === null || fromLat === undefined || fromLng === null || fromLng === undefined ||
+      toLat === null || toLat === undefined || toLng === null || toLng === undefined ||
+      isNaN(fromLat) || isNaN(fromLng) || isNaN(toLat) || isNaN(toLng)) {
+    return 0;
+  }
+  
   const fromLatRad = fromLat * Math.PI / 180;
   const toLatRad = toLat * Math.PI / 180;
   const deltaLngRad = (toLng - fromLng) * Math.PI / 180;
@@ -183,6 +190,78 @@ const calculateHeading = (fromLat, fromLng, toLat, toLng) => {
   let heading = Math.atan2(y, x) * 180 / Math.PI;
   heading = (heading + 360) % 360;
   return heading;
+};
+
+// Calculate distance between two points in meters
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  // Check if inputs are valid numbers
+  if (lat1 === null || lat1 === undefined || lng1 === null || lng1 === undefined ||
+      lat2 === null || lat2 === undefined || lng2 === null || lng2 === undefined ||
+      isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2)) {
+    return 0;
+  }
+  
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+// Calculate bounds for a set of coordinates
+const calculateBounds = (coordinates) => {
+  if (!coordinates || coordinates.length === 0) return null;
+  
+  let minLat = coordinates[0][0];
+  let maxLat = coordinates[0][0];
+  let minLng = coordinates[0][1];
+  let maxLng = coordinates[0][1];
+  
+  coordinates.forEach(coord => {
+    if (coord[0] < minLat) minLat = coord[0];
+    if (coord[0] > maxLat) maxLat = coord[0];
+    if (coord[1] < minLng) minLng = coord[1];
+    if (coord[1] > maxLng) maxLng = coord[1];
+  });
+  
+  return [[minLat, minLng], [maxLat, maxLng]];
+};
+
+// Calculate optimal zoom level based on speed and context
+const calculateOptimalZoom = (device, showPaths, pathLength = 0) => {
+  const speed = device.speed ? parseFloat(device.speed) : 0;
+  
+  // Base zoom levels
+  let baseZoom = 16; // Default zoom for city-level view
+  
+  // Adjust zoom based on speed
+  if (speed > 80) {
+    baseZoom = 12; // Highway level for high speed
+  } else if (speed > 50) {
+    baseZoom = 14; // Major roads for medium speed
+  } else if (speed > 20) {
+    baseZoom = 15; // City streets for low speed
+  } else if (speed === 0) {
+    baseZoom = 17; // Street level for stationary
+  }
+  
+  // Adjust zoom if showing paths
+  if (showPaths && pathLength > 0) {
+    // Zoom out to show more of the path
+    if (pathLength > 20) {
+      baseZoom = Math.max(10, baseZoom - 3); // Show long paths
+    } else if (pathLength > 10) {
+      baseZoom = Math.max(12, baseZoom - 2); // Show medium paths
+    } else if (pathLength > 5) {
+      baseZoom = Math.max(13, baseZoom - 1); // Show short paths
+    }
+  }
+  
+  // Constrain zoom to reasonable bounds
+  return Math.max(10, Math.min(18, baseZoom));
 };
 
 // Smooth path using moving average
@@ -256,7 +335,7 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
   };
 
   const handleRowClick = (imei) => {
-    onDeviceSelect(imei);
+    onDeviceSelect(imei, true); // Pass true to indicate table click for 50ft zoom
   };
 
   if (loading) {
@@ -432,7 +511,8 @@ const PathAnimationMarker = ({
   isSelected,
   device,
   children,
-  onMarkerClick
+  onMarkerClick,
+  onPositionChange
 }) => {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [currentHeading, setCurrentHeading] = useState(0);
@@ -448,6 +528,13 @@ const PathAnimationMarker = ({
 
   // Calculate distance between two points in meters
   const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    // Check if inputs are valid numbers
+    if (lat1 === null || lat1 === undefined || lng1 === null || lng1 === undefined ||
+        lat2 === null || lat2 === undefined || lng2 === null || lng2 === undefined ||
+        isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2)) {
+      return 0;
+    }
+    
     const R = 6371000; // Earth's radius in meters
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -460,10 +547,20 @@ const PathAnimationMarker = ({
 
   // Calculate animation duration based on distance between points
   const calculateAnimationDuration = (startIndex, endIndex) => {
-    // Calculate the distance between the last two points
-    const lastPointIndex = Math.max(1, positions.length - 1);
-    const prevPoint = positions[lastPointIndex - 1];
-    const currentPoint = positions[lastPointIndex];
+    // Check if positions is valid and has enough points
+    if (!positions || positions.length < 2 || startIndex < 0 || endIndex >= positions.length || startIndex >= endIndex) {
+      return 5000; // Default duration if we can't calculate
+    }
+    
+    // Calculate the distance between the specified points
+    const prevPoint = positions[startIndex];
+    const currentPoint = positions[endIndex];
+    
+    // Check if the points are valid
+    if (!prevPoint || !currentPoint || !Array.isArray(prevPoint) || !Array.isArray(currentPoint) || 
+        prevPoint.length < 2 || currentPoint.length < 2) {
+      return 5000; // Default duration if points are invalid
+    }
     
     const distance = calculateDistance(
       prevPoint[0], prevPoint[1],
@@ -506,6 +603,12 @@ const PathAnimationMarker = ({
     if (positions && positions.length > 0) {
       const latestPosition = positions[positions.length - 1];
       
+      // Check if latest position is valid
+      if (!latestPosition || !Array.isArray(latestPosition) || latestPosition.length < 2) {
+        console.warn('⚠️ Invalid latest position:', latestPosition);
+        return;
+      }
+      
       // If this is the first position, set it directly
       if (!currentPosition) {
         setCurrentPosition(latestPosition);
@@ -516,14 +619,17 @@ const PathAnimationMarker = ({
         // Calculate heading based on the last two points, if available
         if (positions.length >= 2) {
           const prevPosition = positions[positions.length - 2];
-          const heading = calculateHeading(
-            prevPosition[0],
-            prevPosition[1],
-            latestPosition[0],
-            latestPosition[1]
-          );
-          setCurrentHeading(heading);
-          console.log(`🧭 Initial heading set to ${heading.toFixed(1)}°`);
+          // Check if prev position is valid
+          if (prevPosition && Array.isArray(prevPosition) && prevPosition.length >= 2) {
+            const heading = calculateHeading(
+              prevPosition[0],
+              prevPosition[1],
+              latestPosition[0],
+              latestPosition[1]
+            );
+            setCurrentHeading(heading);
+            console.log(`🧭 Initial heading set to ${heading.toFixed(1)}°`);
+          }
         } else if (device.heading) {
           setCurrentHeading(parseFloat(device.heading));
           console.log(`🧭 Using device heading: ${device.heading}°`);
@@ -548,14 +654,17 @@ const PathAnimationMarker = ({
         // Calculate heading for the new direction
         if (positions.length >= 2) {
           const prevPosition = positions[positions.length - 2];
-          const heading = calculateHeading(
-            prevPosition[0],
-            prevPosition[1],
-            latestPosition[0],
-            latestPosition[1]
-          );
-          setCurrentHeading(heading);
-          console.log(`🧭 New heading set to ${heading.toFixed(1)}°`);
+          // Check if prev position is valid
+          if (prevPosition && Array.isArray(prevPosition) && prevPosition.length >= 2) {
+            const heading = calculateHeading(
+              prevPosition[0],
+              prevPosition[1],
+              latestPosition[0],
+              latestPosition[1]
+            );
+            setCurrentHeading(heading);
+            console.log(`🧭 New heading set to ${heading.toFixed(1)}°`);
+          }
         }
       }
       
@@ -592,11 +701,25 @@ const PathAnimationMarker = ({
         const segmentStart = positions[currentSegmentIndex];
         const segmentEnd = positions[currentSegmentIndex + 1];
         
+        // Check if segment points are valid
+        if (!segmentStart || !segmentEnd || !Array.isArray(segmentStart) || !Array.isArray(segmentEnd) ||
+            segmentStart.length < 2 || segmentEnd.length < 2) {
+          console.warn('⚠️ Invalid segment points:', { segmentStart, segmentEnd });
+          setIsAnimating(false);
+          return;
+        }
+        
         // Linear interpolation within the current segment
         const lat = segmentStart[0] + (segmentEnd[0] - segmentStart[0]) * progressInSegment;
         const lng = segmentStart[1] + (segmentEnd[1] - segmentStart[1]) * progressInSegment;
         
-        setCurrentPosition([lat, lng]);
+        const newPosition = [lat, lng];
+        setCurrentPosition(newPosition);
+        
+        // Emit position change to parent component
+        if (onPositionChange) {
+          onPositionChange(newPosition);
+        }
         
         // Calculate heading based on the current segment
         const heading = calculateHeading(
@@ -622,7 +745,7 @@ const PathAnimationMarker = ({
         }
       };
     }
-  }, [isAnimating, positions]);
+  }, [isAnimating, positions, onPositionChange]);
 
   if (!currentPosition) {
     return null;
@@ -647,7 +770,7 @@ const PathAnimationMarker = ({
 
 // Map Features Panel Component
 const MapFeaturesPanel = ({
-  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, showRealtimePath, setShowRealtimePath, showRoadSnapping, setShowRoadSnapping, autoCenter, setAutoCenter, onClose
+  showClusters, setShowClusters, showHeatmap, setShowHeatmap, showPaths, setShowPaths, showRealtimePath, setShowRealtimePath, showRoadSnapping, setShowRoadSnapping, autoCenter, setAutoCenter, autoZoom, setAutoZoom, onClose
 }) => {
   return (
     <div className="map-features-panel">
@@ -659,6 +782,10 @@ const MapFeaturesPanel = ({
         <div className="feature-option">
           <input type="checkbox" id="auto-center" checked={autoCenter} onChange={() => setAutoCenter(!autoCenter)} />
           <label htmlFor="auto-center"><MdCenterFocusStrong /> Auto Center on Selected Vehicle</label>
+        </div>
+        <div className="feature-option">
+          <input type="checkbox" id="auto-zoom" checked={autoZoom} onChange={() => setAutoZoom(!autoZoom)} />
+          <label htmlFor="auto-zoom"><MdZoomIn /> Auto Zoom Based on Speed & Context</label>
         </div>
         <div className="feature-option">
           <input type="checkbox" id="show-clusters" checked={showClusters} onChange={() => setShowClusters(!showClusters)} />
@@ -683,6 +810,9 @@ const MapFeaturesPanel = ({
         <div className="feature-info">
           <p><strong>AIS-140 Features:</strong> Real-time GPS tracking with distance-based animated marker.</p>
           <p><strong>Auto Center:</strong> Automatically centers the map on the selected vehicle and keeps it in view as it moves.</p>
+          <p><strong>Auto Zoom:</strong> Intelligently adjusts zoom level based on vehicle speed and path length.</p>
+          <p><strong>50ft Zoom:</strong> Click on any device in the table to zoom to a 50-foot detailed view.</p>
+          <p><strong>Zoom Levels:</strong> Highway (80+ km/h), City (20-50 km/h), Street (&lt;20 km/h), Detailed (stationary).</p>
           <p><strong>Marker Details:</strong> Click on any vehicle marker to view detailed information about that vehicle.</p>
           <p><strong>Road Snapping:</strong> Automatically adjusts GPS coordinates to align with actual road network.</p>
           <p><strong>Smart Speed:</strong> Marker speed adjusts based on distance between GPS points - faster for long distances, slower for short distances.</p>
@@ -754,6 +884,8 @@ function MapView() {
   const [apiStatus, setApiStatus] = useState('checking');
   const [smoothCenter, setSmoothCenter] = useState(center);
   const [roadSnappingInProgress, setRoadSnappingInProgress] = useState({});
+  const [selectedMarkerPosition, setSelectedMarkerPosition] = useState(null);
+  const [lastCenteredPosition, setLastCenteredPosition] = useState(null); // Track last centered position
 
   const prevSelectedDeviceIdRef = useRef(null);
   const prevPositionRef = useRef(null);
@@ -762,6 +894,7 @@ function MapView() {
   const initialPositionSetRef = useRef(false);
   const animationFrameRef = useRef(null);
   const lastDataUpdateRef = useRef({});
+  const centeringTimeoutRef = useRef(null);
 
   // State for map features
   const [showMapFeaturesPanel, setShowMapFeaturesPanel] = useState(false);
@@ -771,6 +904,7 @@ function MapView() {
   const [showRealtimePath, setShowRealtimePath] = useState(true); // Default to true for blue path
   const [showRoadSnapping, setShowRoadSnapping] = useState(true); // Default to true for road snapping
   const [autoCenter, setAutoCenter] = useState(true); // Default to true for auto-centering
+  const [autoZoom, setAutoZoom] = useState(true); // Default to true for auto-zooming
 
   // State for sidebar width
   const [sidebarWidth, setSidebarWidth] = useState(30);
@@ -806,6 +940,78 @@ function MapView() {
       }
     };
   }, [center]);
+
+  // Unified centering function with auto-zoom
+  const centerMapOnPosition = (position, device = null, pathPoints = [], animate = true, forceZoom = null) => {
+    if (!mapRef.current || !position || !Array.isArray(position) || position.length < 2) {
+      return;
+    }
+    
+    // Check if we're already centered on this position (with some tolerance)
+    if (lastCenteredPosition && !forceZoom) {
+      const latDiff = Math.abs(position[0] - lastCenteredPosition[0]);
+      const lngDiff = Math.abs(position[1] - lastCenteredPosition[1]);
+      if (latDiff < 0.00001 && lngDiff < 0.00001) {
+        return; // Already centered on this position
+      }
+    }
+    
+    // Clear any pending centering timeout
+    if (centeringTimeoutRef.current) {
+      clearTimeout(centeringTimeoutRef.current);
+    }
+    
+    // Debounce the centering to avoid rapid repeated calls
+    centeringTimeoutRef.current = setTimeout(() => {
+      if (mapRef.current && !isUserInteracting) {
+        let targetZoom = zoomLevel;
+        
+        // Use forced zoom if provided (for 50ft zoom from table click)
+        if (forceZoom !== null) {
+          targetZoom = forceZoom;
+        } else if (autoZoom && device) {
+          // Calculate optimal zoom if auto-zoom is enabled
+          // Determine path length for zoom calculation
+          const pathLength = pathPoints.length || 0;
+          targetZoom = calculateOptimalZoom(device, showPaths || showRealtimePath, pathLength);
+          
+          // If we have path points, try to fit the entire path in view
+          if (pathPoints.length > 1) {
+            const bounds = calculateBounds(pathPoints);
+            if (bounds) {
+              mapRef.current.fitBounds(bounds, { 
+                padding: [50, 50], 
+                maxZoom: targetZoom,
+                animate: animate,
+                duration: animate ? 0.5 : 0
+              });
+              setCenter(position);
+              setZoomLevel(targetZoom);
+              setLastCenteredPosition(position);
+              console.log('🎯 Map fitted to path bounds:', bounds, 'Zoom:', targetZoom);
+              return;
+            }
+          }
+        }
+        
+        // Standard centering with calculated zoom
+        mapRef.current.setView(position, targetZoom, { animate, duration: animate ? 0.5 : 0 });
+        setCenter(position);
+        setZoomLevel(targetZoom);
+        setLastCenteredPosition(position);
+        console.log('🎯 Map centered on position:', position, 'Zoom:', targetZoom);
+      }
+    }, 100);
+  };
+
+  // Update map center when selected marker position changes (only for animated movement)
+  useEffect(() => {
+    if (selectedMarkerPosition && autoCenter && !isUserInteracting && selectedDeviceId) {
+      const device = devicesData[selectedDeviceId];
+      const pathPoints = realtimeTracks[selectedDeviceId] || [];
+      centerMapOnPosition(selectedMarkerPosition, device, pathPoints);
+    }
+  }, [selectedMarkerPosition, autoCenter, isUserInteracting, selectedDeviceId, devicesData, realtimeTracks]);
 
   // Check API connectivity
   const checkApiConnectivity = async () => {
@@ -970,7 +1176,7 @@ function MapView() {
     return centerPoint ? [centerPoint.latitude, centerPoint.longitude] : null;
   };
 
-  // Update map center for first valid device or all devices center
+  // Update map center for first valid device or all devices center (only on initial load)
   useEffect(() => {
     if (!initialPositionSetRef.current && mapRef.current) {
       let newCenter = null;
@@ -988,12 +1194,11 @@ function MapView() {
       }
       
       if (newCenter) {
-        setCenter(newCenter);
-        mapRef.current.setView(newCenter, zoomLevel);
+        centerMapOnPosition(newCenter, null, [], false);
         initialPositionSetRef.current = true;
       }
     }
-  }, [firstValidDevice, devicesData, zoomLevel]);
+  }, [firstValidDevice, devicesData]);
 
   // Fetch historical track when device is selected and showPaths is true
   useEffect(() => {
@@ -1060,24 +1265,38 @@ function MapView() {
   };
 
   // Handle device selection
-  const handleDeviceSelect = (imei) => {
+  const handleDeviceSelect = (imei, isTableClick = false) => {
     setSelectedDeviceId(imei);
     prevSelectedDeviceIdRef.current = imei;
     initialPositionSetRef.current = false;
+    setLastCenteredPosition(null); // Reset last centered position when selecting new device
+    
     if (positionUpdateTimeoutRef.current) {
       clearTimeout(positionUpdateTimeoutRef.current);
     }
+    
     const device = devicesData[imei];
     if (device) {
       const coords = getCoordinatesFromDevice(device);
-      if (coords && mapRef.current) {
+      if (coords) {
         const { latitude, longitude } = coords;
-        mapRef.current.flyTo([latitude, longitude], zoomLevel, { animate: true, duration: 1.0 });
-        setCenter([latitude, longitude]);
-        prevPositionRef.current = [latitude, longitude];
+        const newPosition = [latitude, longitude];
+        
+        // Get path points for zoom calculation
+        const pathPoints = realtimeTracks[imei] || [];
+        
+        // Force 50ft zoom (zoom level 18-19) if clicked from table
+        const forceZoom = isTableClick ? 19 : null;
+        
+        // Center on the selected device immediately
+        if (autoCenter || isTableClick) {
+          centerMapOnPosition(newPosition, device, pathPoints, true, forceZoom);
+        }
+        
+        prevPositionRef.current = newPosition;
         lastUpdateTimeRef.current = Date.now();
         initialPositionSetRef.current = true;
-        console.log('🎯 Map centered on selected device:', { imei, coords });
+        console.log('🎯 Map centered on selected device:', { imei, coords, isTableClick, zoom: forceZoom || 'auto' });
       } else {
         console.warn('❌ Invalid coordinates for selected device:', { imei, device: device.device_name });
       }
@@ -1095,45 +1314,6 @@ function MapView() {
   const handleSidebarResize = (newWidth) => {
     setSidebarWidth(newWidth);
   };
-
-  // Center map on selected device position with auto-center feature
-  useEffect(() => {
-    if (selectedDeviceId && devicesData[selectedDeviceId] && autoCenter && !isUserInteracting) {
-      const device = devicesData[selectedDeviceId];
-      const coords = getCoordinatesFromDevice(device);
-      if (!coords) {
-        console.warn('❌ Invalid coordinates for selected device:', { selectedDeviceId, deviceName: device.device_name });
-        return;
-      }
-      const { latitude, longitude } = coords;
-      const currentPosition = [latitude, longitude];
-      const now = Date.now();
-      if (positionUpdateTimeoutRef.current) {
-        clearTimeout(positionUpdateTimeoutRef.current);
-      }
-      
-      // Always center on selected device if auto-center is enabled
-      if (autoCenter) {
-        const map = mapRef.current;
-        if (map) {
-          // Check if the device is already in view
-          const bounds = map.getBounds();
-          const isInView = bounds.contains([latitude, longitude]);
-          
-          // If not in view or it's a new device selection, center on it
-          if (!isInView || prevSelectedDeviceIdRef.current !== selectedDeviceId) {
-            map.flyTo(currentPosition, zoomLevel, { animate: true, duration: 1.0 });
-            setCenter(currentPosition);
-            prevPositionRef.current = currentPosition;
-            prevSelectedDeviceIdRef.current = selectedDeviceId;
-            lastUpdateTimeRef.current = now;
-            initialPositionSetRef.current = true;
-            console.log('🎯 Map auto-centered on selected device:', { selectedDeviceId, coords });
-          }
-        }
-      }
-    }
-  }, [selectedDeviceId, devicesData, zoomLevel, isUserInteracting, autoCenter]);
 
   // Map events
   function MapEvents() {
@@ -1181,6 +1361,9 @@ function MapView() {
             <button className={`control-btn ${autoCenter ? 'active' : ''}`} onClick={() => setAutoCenter(!autoCenter)} title="Auto Center on Selected Vehicle">
               <MdCenterFocusStrong />
             </button>
+            <button className={`control-btn ${autoZoom ? 'active' : ''}`} onClick={() => setAutoZoom(!autoZoom)} title="Auto Zoom Based on Speed">
+              <MdZoomIn />
+            </button>
             <button className={`control-btn ${showMapFeaturesPanel ? 'active' : ''}`} onClick={() => setShowMapFeaturesPanel(!showMapFeaturesPanel)} title="Map Features">
               <MdLayers />
             </button>
@@ -1203,12 +1386,13 @@ function MapView() {
             <div className="connection-status">
               <StatusIndicator status={apiStatus} />
               <span style={{ marginLeft: '8px' }}>
-                {apiStatus === 'connected' ? 'AIS-140 Connected' : apiStatus === 'checking' ? 'Checking...' : 'Connection Error'}
+                {apiStatus === 'connected' ? 'Device Connected' : apiStatus === 'checking' ? 'Checking...' : 'Connection Error'}
               </span>
             </div>
             <div className="cursor-info">
               <div>Lat: {cursorPosition[0].toFixed(6)}</div>
               <div>Lng: {cursorPosition[1].toFixed(6)}</div>
+              <div>Zoom: {zoomLevel}</div>
             </div>
           </div>
           <MapContainer
@@ -1270,6 +1454,7 @@ function MapView() {
                       isSelected={true}
                       device={device}
                       onMarkerClick={handleMarkerClick}
+                      onPositionChange={setSelectedMarkerPosition}
                     >
                       <Tooltip permanent direction="top" offset={[0, -24]} opacity={0.9}>
                         {device.device_name || `M66-${imei.slice(-4)}`}
@@ -1429,12 +1614,14 @@ function MapView() {
           setShowHeatmap={setShowHeatmap}
           showPaths={setShowPaths}
           setShowPaths={setShowPaths}
-          showRealtimePath={setShowRealtimePath}
+          showRealtimePath={showRealtimePath}
           setShowRealtimePath={setShowRealtimePath}
           showRoadSnapping={setShowRoadSnapping}
           setShowRoadSnapping={setShowRoadSnapping}
           autoCenter={autoCenter}
           setAutoCenter={setAutoCenter}
+          autoZoom={autoZoom}
+          setAutoZoom={setAutoZoom}
           onClose={() => setShowMapFeaturesPanel(false)}
         />
       )}
