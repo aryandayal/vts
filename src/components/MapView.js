@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { MapContainer, TileLayer, Popup, ScaleControl, useMap, useMapEvents, Polyline, Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { BsFillTruckFrontFill } from "react-icons/bs";
 import { Helmet } from "react-helmet";
+import { useNavigate } from 'react-router-dom';
 import { MdLayers, MdWhatshot, MdTimeline, MdCenterFocusStrong, MdInfo, MdZoomIn, MdZoomOut } from "react-icons/md";
 
 // Import Leaflet CSS for proper rendering
@@ -19,7 +20,7 @@ L.Icon.Default.mergeOptions({
 
 // API configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://3.109.186.142:3000';
-const GOOGLE_MAPS_API_KEY = 'AIzaSyB7GMusWIecrMygztw8BEGbc4zKhBru8N8';
+const GOOGLE_MAPS_API_KEY = process.env.MAP_API_KEY || 'AIzaSyB7GMusWIecrMygztw8BEGbc4zKhBru8N8';
 
 console.log('🌐 MapView using API:', API_BASE_URL);
 console.log('🗺️ Using Google Maps API Key:', GOOGLE_MAPS_API_KEY);
@@ -300,9 +301,16 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
     }));
   };
 
-  const handleRowClick = (imei) => {
-    onDeviceSelect(imei, true); // Pass true to indicate table click for 50ft zoom
-  };
+  // Optimize row click handler with useCallback
+  const handleRowClick = useCallback((imei, e) => {
+    // Only handle the click if it's directly on the row or a cell that's not a checkbox
+    if (e.target.tagName !== 'INPUT' && !e.target.closest('input[type="checkbox"]')) {
+      // Use requestAnimationFrame to ensure this doesn't block navigation
+      requestAnimationFrame(() => {
+        onDeviceSelect(imei, true); // Pass true to indicate table click for 50ft zoom
+      });
+    }
+  }, [onDeviceSelect]);
 
   if (loading) {
     return (
@@ -351,9 +359,21 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
                 const coords = getCoordinatesFromDevice(device);
                 const isActive = device.is_active || (device.last_seen && (new Date() - new Date(device.last_seen)) < 3600000);
                 return (
-                  <tr key={imei} className={selectedDeviceId === imei ? 'selected-row' : ''} onClick={() => handleRowClick(imei)}>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={!!selectedVehicles[imei]} onChange={() => handleVehicleSelect(imei)} />
+                  <tr 
+                    key={imei} 
+                    className={selectedDeviceId === imei ? 'selected-row' : ''} 
+                    onClick={(e) => handleRowClick(imei, e)}
+                  >
+                    <td onClick={(e) => {
+                      e.stopPropagation();
+                      handleVehicleSelect(imei);
+                    }}>
+                      <input 
+                        type="checkbox" 
+                        checked={!!selectedVehicles[imei]} 
+                        onChange={() => handleVehicleSelect(imei)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
                     </td>
                     <td>{idx + 1}</td>
                     <td>{device.device_name || 'M66-Device'}</td>
@@ -430,26 +450,19 @@ const VehicleIndicator = ({ devices }) => {
   );
 };
 
-// Create a vehicle marker icon with direction
+// Create a vehicle marker icon with direction using PNG image
 const createVehicleIcon = (color = '#3388ff', heading = 0, isSelected = false) => {
   const rotation = heading || 0;
   const size = isSelected ? 48 : 40;
-  const svgIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}">
-      <rect x="6" y="8" width="12" height="8" rx="1" fill="${color}" />
-      <rect x="7" y="9" width="4" height="2" fill="${color}" opacity="0.7" />
-      <rect x="13" y="9" width="4" height="2" fill="${color}" opacity="0.7" />
-      <circle cx="8" cy="10" r="1" fill="#ffffff" opacity="0.9" />
-      <path d="M 8 6 L 6 8 L 10 8 Z" fill="#ffffff" opacity="0.8" />
-    </svg>
-  `;
+  const imageUrl = "https://z-cdn-media.chatglm.cn/files/25a12214-35b0-4271-a0ac-bca20827e2b7_vehicle-icon.png?auth_key=1863121008-fc98409b7de54cd7af857b1bc2061473-0-d903e290094e6fd33decea526fe4818a";
+  
   return L.divIcon({
     className: 'custom-vehicle-marker',
     html: `
       <div class="vehicle-icon-container" style="width: ${size}px; height: ${size}px; position: relative; cursor: pointer;">
         <div class="vehicle-icon-rotation" style="width: ${size}px; height: ${size}px; position: relative; transform: rotate(${rotation}deg);">
           <div class="vehicle-icon-body" style="width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
-            ${svgIcon}
+            <img src="${imageUrl}" alt="Vehicle" style="width: 100%; height: 100%; object-fit: contain;" />
           </div>
           ${isSelected ? `
           <div class="selection-pulse" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${size * 0.8}px; height: ${size * 0.8}px; background-color: rgba(255,255,255,0.3); border-radius: 50%; animation: pulse 2s infinite; border: 2px solid rgba(255,255,255,0.5);"></div>
@@ -713,6 +726,15 @@ const PathAnimationMarker = ({
     }
   }, [isAnimating, positions, onPositionChange]);
 
+  // Cleanup animation when component unmounts
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
   if (!currentPosition) {
     return null;
   }
@@ -778,6 +800,7 @@ const ResizableDivider = ({ onResize }) => {
 
 // Main MapView Component
 function MapView() {
+  const navigate = useNavigate();
   const [mapType, setMapType] = useState('roadmap');
   const [center, setCenter] = useState([25.621209, 85.170179]); // Default to India (Bihar)
   const [cursorPosition, setCursorPosition] = useState([25.621209, 85.170179]);
@@ -797,6 +820,7 @@ function MapView() {
   const [roadSnappingInProgress, setRoadSnappingInProgress] = useState({});
   const [selectedMarkerPosition, setSelectedMarkerPosition] = useState(null);
   const [lastCenteredPosition, setLastCenteredPosition] = useState(null); // Track last centered position
+  const [mapKey, setMapKey] = useState(Date.now()); // Key to force re-creation of map
 
   const prevSelectedDeviceIdRef = useRef(null);
   const prevPositionRef = useRef(null);
@@ -812,6 +836,9 @@ function MapView() {
 
   const mapRef = useRef(null);
   const pollingIntervalRef = useRef(null);
+  
+  // Add a ref to track if navigation is in progress
+  const isNavigatingRef = useRef(false);
 
   // Map tile URLs with Google Maps API key
   const mapLayers = {
@@ -820,6 +847,200 @@ function MapView() {
     hybrid: `https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`,
     terrain: `https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&key=${GOOGLE_MAPS_API_KEY}`
   };
+
+  // Cleanup function when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clean up any ongoing operations when component unmounts
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      
+      if (positionUpdateTimeoutRef.current) {
+        clearTimeout(positionUpdateTimeoutRef.current);
+        positionUpdateTimeoutRef.current = null;
+      }
+      
+      if (centeringTimeoutRef.current) {
+        clearTimeout(centeringTimeoutRef.current);
+        centeringTimeoutRef.current = null;
+      }
+      
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      
+      // Reset state that might interfere with navigation
+      setIsUserInteracting(false);
+      setSelectedDeviceId(null);
+      setClickedMarkerDevice(null);
+      setDevicesData({});
+      setRealtimeData({});
+      setRealtimeTracks({});
+      setSnappedTracks({});
+      
+      // Force a new map key on next mount
+      setMapKey(Date.now());
+    };
+  }, []);
+
+  // Handle beforeunload to clean up resources
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Clean up all resources
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      
+      if (positionUpdateTimeoutRef.current) {
+        clearTimeout(positionUpdateTimeoutRef.current);
+      }
+      
+      if (centeringTimeoutRef.current) {
+        clearTimeout(centeringTimeoutRef.current);
+      }
+      
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // Navigation interceptor
+  useEffect(() => {
+    // Override the history.pushState and history.replaceState to ensure navigation works
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+    
+    window.history.pushState = function(state, title, url) {
+      originalPushState.apply(this, arguments);
+      // Force a re-render if the URL changes but the component doesn't
+      if (window.location.pathname !== url) {
+        window.location.reload();
+      }
+    };
+    
+    window.history.replaceState = function(state, title, url) {
+      originalReplaceState.apply(this, arguments);
+      // Force a re-render if the URL changes but the component doesn't
+      if (window.location.pathname !== url) {
+        window.location.reload();
+      }
+    };
+    
+    return () => {
+      // Restore original functions
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+    };
+  }, []);
+
+  // Prevent map from blocking navigation
+  useEffect(() => {
+    const handleMapClick = (e) => {
+      // If the click is on a link or button, let it pass through
+      if (e.originalEvent && e.originalEvent.target) {
+        const target = e.originalEvent.target;
+        if (target.tagName === 'A' || target.tagName === 'BUTTON' || 
+            target.closest('a') || target.closest('button')) {
+          return;
+        }
+      }
+      // Otherwise, stop propagation to prevent interference with navigation
+      e.originalEvent.stopPropagation();
+    };
+
+    if (mapRef.current) {
+      mapRef.current.on('click', handleMapClick);
+      mapRef.current.on('mousedown', handleMapClick);
+      mapRef.current.on('mouseup', handleMapClick);
+    }
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.off('click', handleMapClick);
+        mapRef.current.off('mousedown', handleMapClick);
+        mapRef.current.off('mouseup', handleMapClick);
+      }
+    };
+  }, []);
+
+  // Add global click handler to ensure navigation works
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      // Check if the clicked element is a navigation link
+      const target = e.target;
+      if (target.tagName === 'A' || target.closest('a')) {
+        const link = target.tagName === 'A' ? target : target.closest('a');
+        const href = link.getAttribute('href');
+        
+        // If it's an internal link, use React Router to navigate
+        if (href && href.startsWith('/')) {
+          e.preventDefault();
+          
+          // Set navigation flag to true immediately
+          isNavigatingRef.current = true;
+          
+          // Navigate immediately without waiting for cleanup
+          navigate(href);
+          
+          // Schedule cleanup in the background after navigation has started
+          setTimeout(() => {
+            // Clear all pending operations
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+            
+            if (positionUpdateTimeoutRef.current) {
+              clearTimeout(positionUpdateTimeoutRef.current);
+              positionUpdateTimeoutRef.current = null;
+            }
+            
+            if (centeringTimeoutRef.current) {
+              clearTimeout(centeringTimeoutRef.current);
+              centeringTimeoutRef.current = null;
+            }
+            
+            if (animationFrameRef.current) {
+              cancelAnimationFrame(animationFrameRef.current);
+              animationFrameRef.current = null;
+            }
+            
+            // Reset state that might interfere with future operations
+            setIsUserInteracting(false);
+            setSelectedDeviceId(null);
+            setClickedMarkerDevice(null);
+            setDevicesData({});
+            setRealtimeData({});
+            setRealtimeTracks({});
+            setSnappedTracks({});
+            
+            // Force a new map key on next mount
+            setMapKey(Date.now());
+            
+            console.log('🔄 Background cleanup completed after navigation');
+          }, 0); // Use 0 delay to run in next event loop
+        }
+      }
+    };
+
+    // Add event listener to the document
+    document.addEventListener('click', handleGlobalClick);
+    
+    return () => {
+      // Clean up event listener
+      document.removeEventListener('click', handleGlobalClick);
+    };
+  }, [navigate]);
 
   // Smooth center animation
   useEffect(() => {
@@ -1094,16 +1315,23 @@ function MapView() {
     return date.toLocaleString();
   };
 
-  // Handle device selection
-  const handleDeviceSelect = (imei, isTableClick = false) => {
+  // Handle device selection with navigation check
+  const handleDeviceSelect = useCallback((imei, isTableClick = false) => {
+    // Check if navigation is in progress
+    if (isNavigatingRef.current) {
+      console.log('⚠️ Navigation in progress, skipping device selection');
+      return;
+    }
+    
+    // Cancel any pending position updates
+    if (positionUpdateTimeoutRef.current) {
+      clearTimeout(positionUpdateTimeoutRef.current);
+    }
+    
     setSelectedDeviceId(imei);
     prevSelectedDeviceIdRef.current = imei;
     initialPositionSetRef.current = false;
     setLastCenteredPosition(null); // Reset last centered position when selecting new device
-
-    if (positionUpdateTimeoutRef.current) {
-      clearTimeout(positionUpdateTimeoutRef.current);
-    }
 
     const device = devicesData[imei];
     if (device) {
@@ -1118,18 +1346,34 @@ function MapView() {
         // Force 50ft zoom (zoom level 18-19) if clicked from table
         const forceZoom = isTableClick ? 19 : null;
 
-        // Center on the selected device immediately
-        centerMapOnPosition(newPosition, device, pathPoints, true, forceZoom);
+        // Use a timeout to ensure this doesn't block navigation
+        positionUpdateTimeoutRef.current = setTimeout(() => {
+          // Check again if navigation is in progress
+          if (isNavigatingRef.current) {
+            console.log('⚠️ Navigation in progress, skipping map centering');
+            return;
+          }
+          
+          // Center on the selected device
+          centerMapOnPosition(newPosition, device, pathPoints, true, forceZoom);
 
-        prevPositionRef.current = newPosition;
-        lastUpdateTimeRef.current = Date.now();
-        initialPositionSetRef.current = true;
-        console.log('🎯 Map centered on selected device:', { imei, coords, isTableClick, zoom: forceZoom || 'auto' });
+          prevPositionRef.current = newPosition;
+          lastUpdateTimeRef.current = Date.now();
+          initialPositionSetRef.current = true;
+          console.log('🎯 Map centered on selected device:', { imei, coords, isTableClick, zoom: forceZoom || 'auto' });
+        }, 0);
       } else {
         console.warn('❌ Invalid coordinates for selected device:', { imei, device: device.device_name });
       }
     }
-  };
+  }, [devicesData, realtimeTracks]);
+
+  // Reset navigation flag when component unmounts
+  useEffect(() => {
+    return () => {
+      isNavigatingRef.current = false;
+    };
+  }, []);
 
   // Handle marker click
   const handleMarkerClick = (device) => {
@@ -1208,6 +1452,7 @@ function MapView() {
             </div>
           </div>
           <MapContainer
+            key={mapKey} // Add key to force re-creation of map
             center={smoothCenter}
             zoom={zoomLevel}
             className="map-view"
@@ -1268,12 +1513,6 @@ function MapView() {
                         <div className="popup-content">
                           <div className="popup-header">
                             <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
-                            <button
-                              className="popup-close-btn"
-                              onClick={() => setClickedMarkerDevice(null)}
-                            >
-                              ×
-                            </button>
                           </div>
                           <div className="popup-body">
                             <div className="popup-info-grid">
@@ -1347,12 +1586,6 @@ function MapView() {
                         <div className="popup-content">
                           <div className="popup-header">
                             <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
-                            <button
-                              className="popup-close-btn"
-                              onClick={() => setClickedMarkerDevice(null)}
-                            >
-                              ×
-                            </button>
                           </div>
                           <div className="popup-body">
                             <div className="popup-info-grid">

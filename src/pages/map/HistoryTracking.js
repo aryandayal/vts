@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import Header from "../../components/Header";
 import BottomNavbar from "../../components/BottomNavbar";
@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3020';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://3.109.186.142:3020';
 
 // Fetch devices from backend
 const fetchDevices = async (setDevicesData, setLoading, setError) => {
@@ -103,18 +103,6 @@ const fetchFullDeviceData = async (imei, startDate, endDate, setHistoryTrack, se
   } finally {
     setTrackLoading(false);
   }
-};
-
-// Helper function to safely convert to fixed decimal
-const safeToFixed = (value, decimals = 6) => {
-  if (value === null || value === undefined || value === '') {
-    return 'N/A';
-  }
-  const num = parseFloat(value);
-  if (isNaN(num)) {
-    return 'N/A';
-  }
-  return num.toFixed(decimals);
 };
 
 // Calculate heading between two points
@@ -252,7 +240,7 @@ const PathAnimationMarker = ({
     } else {
       setIsAnimating(false);
     }
-  }, [isPlaying, positions, internalSegment, currentHeading]);
+  }, [isPlaying, positions, internalSegment, currentHeading, isAnimating]);
 
   useEffect(() => {
     if (resetAnimation && positions && positions.length > 0) {
@@ -550,13 +538,6 @@ const TrackingHistory = () => {
       <Header />
       <BottomNavbar text="Tracking History" />
       <div className="tracking-history-container">
-        <div className="header">
-          <div className="report-title">Tracking History</div>
-          <div className="date-range">
-            <span>From: {historyTrack.length > 0 ? formatTimestamp(historyTrack[0].timestamp) : 'N/A'}</span>
-            <span>To: {historyTrack.length > 0 ? formatTimestamp(historyTrack[historyTrack.length - 1].timestamp) : 'N/A'}</span>
-          </div>
-        </div>
 
         <div className="main-content">
           <div className="sidebar" style={{ width: `${sidebarWidth}%` }}>

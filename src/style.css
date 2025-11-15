@@ -59,6 +59,8 @@ body {
     scrollbar-width: thin;
     scrollbar-color: #4a90e2 #f1f1f1;
   }
+
+  
   
   /* Custom scrollbar for Webkit browsers */
   .sidebar::-webkit-scrollbar {

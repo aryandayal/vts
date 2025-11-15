@@ -6,15 +6,6 @@
   color: #333;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px 20px;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #ddd;
-}
-
 .report-title {
   font-size: 18px;
   font-weight: bold;
@@ -237,11 +228,6 @@
   font-weight: 500;
 }
 
-.leaflet-container {
-  height: 100%;
-  width: 100%;
-}
-
 .popup-content {
   font-family: Arial, sans-serif;
   max-width: 250px;
@@ -324,11 +310,6 @@
 .resizable-divider.dragging::after {
   background-color: #495057;
   opacity: 0.8;
-}
-
-.custom-vehicle-marker {
-  background: transparent !important;
-  border: none !important;
 }
 
 .history-path {
