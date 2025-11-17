@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Cookies from 'js-cookie'; // Import js-cookie library
-import { useUser } from '../components/UserContext'; // Import the useUser hook
+import Cookies from 'js-cookie';
+import { useUser } from '../components/UserContext';
 import './login.css';
-// import Logo from '../assets/logos.png';
 
 function Login() {
   const [user_id, setuser_id] = useState('');
@@ -11,7 +10,7 @@ function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { setUser } = useUser(); // Get the setUser function from context
+  const { setUser } = useUser();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -34,26 +33,38 @@ function Login() {
       const data = await response.json();
 
       if (data.success) {
-        // Store token in cookie with security settings
-        Cookies.set('token', data.token, { 
-          expires: 7, // Expires in 7 days
-          secure: true, // Only sent over HTTPS
-          sameSite: 'strict', // Prevent CSRF attacks
-          path: '/' // Available across entire site
-        });
+        // Access the nested data object
+        const { user, accessToken, refreshToken } = data.data;
         
-        // Store user data in cookie
-        Cookies.set('user', JSON.stringify(data.user), { 
+        // Store access token in cookie
+        Cookies.set('token', accessToken, { 
           expires: 7,
           secure: true,
           sameSite: 'strict',
           path: '/'
         });
         
-        // Update user context with the user data
-        setUser(data.user);
+        // Store refresh token in cookie (optional but recommended)
+        Cookies.set('refreshToken', refreshToken, { 
+          expires: 7,
+          secure: true,
+          sameSite: 'strict',
+          path: '/'
+        });
         
-        console.log('Token saved in cookie');
+        // Store user data in cookie
+        Cookies.set('user', JSON.stringify(user), { 
+          expires: 7,
+          secure: true,
+          sameSite: 'strict',
+          path: '/'
+        });
+        
+        // Update user context
+        setUser(user);
+        
+        console.log('Access token saved in cookie');
+        console.log('Refresh token saved in cookie');
         console.log('User data saved in cookie');
         console.log('User context updated');
         
@@ -73,19 +84,15 @@ function Login() {
   return (
     <div className="login-bg">
       <div className="login-container">
-        {/* Blue Section */}
         <div className="login-blue">
-          {/* <img src={Logo} alt="Logo" className="login-logo" /> */}
           <h2 className="login-title">VTS</h2>
           <p className="login-desc">Vehicle Tracking</p>
         </div>
-        {/* Login Form Section */}
         <div className="login-form-section">
           <form className="login-form" onSubmit={handleSubmit}>
             <h3>Admin Login</h3>
             {error && <div className="error-message" style={{ color: 'red', textAlign: 'center', marginBottom: '10px' }}>{error}</div>}
             
-            {/* Loading overlay */}
             {isLoading && (
               <div className="loading-overlay">
                 <div className="loader"></div>
@@ -124,39 +131,19 @@ function Login() {
   );
 }
 
-// Logout function that removes cookies and clears context
-export const logout = () => {
-  // Remove token and user data cookies
-  Cookies.remove('token', { path: '/' });
-  Cookies.remove('user', { path: '/' });
-  
-  // Clear user context by setting it to null
-  // Note: This function is called outside of React components, so we can't use setUser directly
-  // The context will be cleared in the Header component's handleLogout function
-  
-  console.log('Token removed from cookie');
-  console.log('User data removed from cookie');
-  
-  // Redirect to login page
-  window.location.href = '/';
-};
-
 export default Login;
-
 // import React, { useState } from 'react';
 // import { useNavigate } from 'react-router-dom';
-// import Cookies from 'js-cookie'; // Import js-cookie library
-// import { useUser } from '../components/UserContext'; // Import the useUser hook
+// import { useUser } from '../components/UserContext';
 // import './login.css';
-// // import Logo from '../assets/logos.png';
 
 // function Login() {
-//   const [username, setUsername] = useState('');
+//   const [user_id, setuser_id] = useState('');
 //   const [password, setPassword] = useState('');
 //   const [isLoading, setIsLoading] = useState(false);
 //   const [error, setError] = useState('');
 //   const navigate = useNavigate();
-//   const { setUser } = useUser(); // Get the setUser function from context
+//   const { login } = useUser(); // Use login function instead of setUser
 
 //   const handleSubmit = async (e) => {
 //     e.preventDefault();
@@ -169,7 +156,7 @@ export default Login;
 //         headers: {
 //           'Content-Type': 'application/json',
 //         },
-//         body: JSON.stringify({ username, password }),
+//         body: JSON.stringify({ user_id, password }),
 //       });
 
 //       if (!response.ok) {
@@ -179,28 +166,15 @@ export default Login;
 //       const data = await response.json();
 
 //       if (data.success) {
-//         // Store token in cookie with security settings
-//         Cookies.set('token', data.token, { 
-//           expires: 7, // Expires in 7 days
-//           secure: true, // Only sent over HTTPS
-//           sameSite: 'strict', // Prevent CSRF attacks
-//           path: '/' // Available across entire site
-//         });
+//         // Access the nested data object
+//         const { user, accessToken, refreshToken } = data.data;
         
-//         // Store user data in cookie
-//         Cookies.set('user', JSON.stringify(data.user), { 
-//           expires: 7,
-//           secure: true,
-//           sameSite: 'strict',
-//           path: '/'
-//         });
+//         // Use the login function from context to set both user and token
+//         login(user, accessToken);
         
-//         // Update user context with the user data
-//         setUser(data.user);
-        
-//         console.log('Token saved in cookie');
-//         console.log('User data saved in cookie');
-//         console.log('User context updated');
+//         console.log('User logged in successfully');
+//         console.log('Access token:', accessToken);
+//         console.log('User data:', user);
         
 //         // Redirect to dashboard
 //         navigate('/dashboard');
@@ -218,19 +192,15 @@ export default Login;
 //   return (
 //     <div className="login-bg">
 //       <div className="login-container">
-//         {/* Blue Section */}
 //         <div className="login-blue">
-//           {/* <img src={Logo} alt="Logo" className="login-logo" /> */}
 //           <h2 className="login-title">VTS</h2>
 //           <p className="login-desc">Vehicle Tracking</p>
 //         </div>
-//         {/* Login Form Section */}
 //         <div className="login-form-section">
 //           <form className="login-form" onSubmit={handleSubmit}>
 //             <h3>Admin Login</h3>
 //             {error && <div className="error-message" style={{ color: 'red', textAlign: 'center', marginBottom: '10px' }}>{error}</div>}
             
-//             {/* Loading overlay */}
 //             {isLoading && (
 //               <div className="loading-overlay">
 //                 <div className="loader"></div>
@@ -241,9 +211,9 @@ export default Login;
 //             <div className="input-group">
 //               <input
 //                 type="text"
-//                 placeholder="Username"
-//                 value={username}
-//                 onChange={e => setUsername(e.target.value)}
+//                 placeholder="username"
+//                 value={user_id}
+//                 onChange={e => setuser_id(e.target.value)}
 //                 required
 //                 disabled={isLoading}
 //               />
@@ -268,22 +238,5 @@ export default Login;
 //     </div>
 //   );
 // }
-
-// // Logout function that removes cookies and clears context
-// export const logout = () => {
-//   // Remove token and user data cookies
-//   Cookies.remove('token', { path: '/' });
-//   Cookies.remove('user', { path: '/' });
-  
-//   // Clear user context by setting it to null
-//   // Note: This function is called outside of React components, so we can't use setUser directly
-//   // The context will be cleared in the Header component's handleLogout function
-  
-//   console.log('Token removed from cookie');
-//   console.log('User data removed from cookie');
-  
-//   // Redirect to login page
-//   window.location.href = '/';
-// };
 
 // export default Login;

@@ -1,19 +1,5 @@
-/* Reset and base styles */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html, body {
-  height: 100%;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  margin: 0;
-  padding: 0;
-}
-
 /* Main container for MapView with scrolling */
-.map-view-container {
+.container {
   height: 100vh;
   width: 100%;
   overflow-y: auto;
@@ -25,7 +11,7 @@ html, body {
 }
 
 /* Main content */
-.main-content {
+.mainContent {
   display: flex;
   flex: 1;
   min-height: calc(100vh - 32px); /* Subtract the height of VehicleIndicator */
@@ -50,7 +36,7 @@ html, body {
 }
 
 /* Resizable Divider Styles */
-.resizable-divider {
+.resizableDivider {
   width: 4px;
   height: 100%;
   background-color: #f5f7fa;
@@ -66,25 +52,25 @@ html, body {
   padding: 0;
 }
 
-.resizable-divider:hover {
+.resizableDivider:hover {
   background-color: #e9ecef;
 }
 
-.resizable-divider.dragging {
+.resizableDivider.dragging {
   background-color: #dee2e6;
 }
 
-.divider-line {
+.dividerLine {
   width: 1px;
   height: 100%;
   background-color: #ced4da;
 }
 
-.divider-handle {
+.dividerHandle {
   display: none;
 }
 
-.resizable-divider:hover::after {
+.resizableDivider:hover::after {
   content: '';
   position: absolute;
   width: 2px;
@@ -94,13 +80,13 @@ html, body {
   opacity: 0.5;
 }
 
-.resizable-divider.dragging::after {
+.resizableDivider.dragging::after {
   background-color: #495057;
   opacity: 0.8;
 }
 
 /* Table container */
-.table-container {
+.tableContainer {
   flex: 1;
   overflow: hidden;
   display: flex;
@@ -110,7 +96,7 @@ html, body {
 }
 
 /* Table wrapper for horizontal scrolling */
-.table-wrapper {
+.tableWrapper {
   overflow-x: auto;
   overflow-y: auto;
   flex: 1;
@@ -119,7 +105,7 @@ html, body {
 }
 
 /* No devices message */
-.no-devices-message {
+.noDevicesMessage {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -130,13 +116,13 @@ html, body {
   height: 100%;
 }
 
-.no-devices-message p {
+.noDevicesMessage p {
   margin-bottom: 20px;
   font-size: 16px;
 }
 
 /* Loading spinner */
-.loading-spinner {
+.loadingSpinner {
   width: 40px;
   height: 40px;
   border: 4px solid rgba(0, 0, 0, 0.1);
@@ -152,7 +138,7 @@ html, body {
 }
 
 /* Map container styles */
-.map-container {
+.mapContainer {
   height: 100%;
   position: relative;
   overflow: hidden;
@@ -163,7 +149,7 @@ html, body {
 }
 
 /* Map view */
-.map-view {
+.mapView {
   width: 100%;
   height: 100%;
   margin: 0;
@@ -171,7 +157,7 @@ html, body {
 }
 
 /* Controls at bottom - SIMPLIFIED */
-.map-controls-bottom {
+.mapControlsBottom {
   position: absolute;
   bottom: 20px;
   left: 50%;
@@ -186,12 +172,12 @@ html, body {
   border: 2px solid #3498db;
 }
 
-.map-type-controls {
+.mapTypeControls {
   display: flex;
   gap: 8px;
 }
 
-.map-type-btn {
+.mapTypeBtn {
   padding: 5px 10px;
   background: #f0f0f0;
   border: none;
@@ -201,12 +187,12 @@ html, body {
   font-size: 12px;
 }
 
-.map-type-btn.active {
+.mapTypeBtnActive {
   background: #3498db;
   color: white;
 }
 
-.connection-status {
+.connectionStatus {
   display: flex;
   align-items: center;
   font-weight: 500;
@@ -214,50 +200,33 @@ html, body {
 }
 
 /* Popup content */
-.popup-content {
+.popupContent {
   font-family: Arial, sans-serif;
   max-width: 250px;
 }
 
-.popup-content h3 {
+.popupContent h3 {
   margin-top: 0;
   color: #2c3e50;
   border-bottom: 1px solid #eee;
   padding-bottom: 5px;
 }
 
-.popup-content p {
+.popupContent p {
   margin: 5px 0;
   font-size: 14px;
 }
 
-/* Custom balloon marker styling */
-.custom-balloon-marker {
-  background: transparent !important;
-  border: none !important;
-}
-
-/* Leaflet overrides */
-.leaflet-div-icon {
-  background: transparent !important;
-  border: none !important;
-}
-
-/* Override Leaflet tooltip to prevent conflicts */
-.leaflet-tooltip {
-  display: none; /* Hide default Leaflet tooltips */
-}
-
 /* Vehicle table adjustments */
-.vehicle-table {
+.vehicleTable {
   width: 100%;
   border-collapse: collapse;
   background-color: #ffffff;
   min-width: 1200px;
 }
 
-.vehicle-table th,
-.vehicle-table td {
+.vehicleTable th,
+.vehicleTable td {
   padding: 8px 12px;
   text-align: left;
   border-bottom: 1px solid #e9ecef;
@@ -267,7 +236,7 @@ html, body {
   max-width: 150px;
 }
 
-.vehicle-table th {
+.vehicleTable th {
   background-color: #f8f9fa;
   font-weight: 600;
   color: #495057;
@@ -279,33 +248,33 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-.vehicle-table tr {
+.vehicleTable tr {
   transition: background-color 0.2s ease;
   cursor: pointer;
 }
 
-.vehicle-table tr:hover {
+.vehicleTable tr:hover {
   background-color: #f8f9fa;
 }
 
-.vehicle-table tr.selected-row {
+.vehicleTable trSelectedRow {
   background-color: #e3f2fd;
 }
 
-.vehicle-table td {
+.vehicleTable td {
   color: #495057;
   font-size: 12px;
 }
 
 /* Blue realtime path styles */
-.realtime-path {
+.realtimePath {
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
   transition: all 0.5s ease-out;
 }
 
-.selected-realtime-path {
+.selectedRealtimePath {
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
@@ -323,7 +292,7 @@ html, body {
 }
 
 /* Path trace animation for real-time polyline (unused but retained for potential future use) */
-.path-trace {
+.pathTrace {
   stroke-dasharray: 5, 5;
   animation: dash 20s linear infinite;
 }
@@ -335,7 +304,7 @@ html, body {
 }
 
 /* Selected path trace for real-time polyline (unused but retained for potential future use) */
-.selected-path-trace {
+.selectedPathTrace {
   stroke-dasharray: 10, 5;
   animation: selectedDash 20s linear infinite;
   filter: drop-shadow(0 0 3px rgba(33, 150, 243, 0.6));
@@ -348,35 +317,35 @@ html, body {
 }
 
 /* Enhanced vehicle marker with rotation animation */
-.custom-vehicle-marker {
+.customVehicleMarker {
   background: transparent !important;
   border: none !important;
   transition: transform 0.3s ease-out, opacity 0.3s ease-out;
 }
 
-.custom-vehicle-marker:hover {
+.customVehicleMarker:hover {
   transform: scale(1.1);
 }
 
 /* Vehicle icon container for smooth movement */
-.vehicle-icon-container {
+.vehicleIconContainer {
   position: relative;
   transform-origin: center bottom;
 }
 
-.vehicle-icon-rotation {
+.vehicleIconRotation {
   position: relative;
   transform-origin: center center;
   transition: transform 0.5s ease-out; /* Smooth transition for rotation */
 }
 
-.vehicle-icon-body {
+.vehicleIconBody {
   position: relative;
   transform-origin: center center;
 }
 
 /* Path progress bar styles */
-.path-progress-bar {
+.pathProgressBar {
   flex: 1;
   height: 8px;
   background-color: #e9ecef;
@@ -385,7 +354,7 @@ html, body {
   margin: 0 10px;
 }
 
-.path-progress-fill {
+.pathProgressFill {
   height: 100%;
   background: linear-gradient(90deg, #2196F3, #1976D2);
   border-radius: 4px;
@@ -393,14 +362,14 @@ html, body {
 }
 
 /* Enhanced marker trail effect */
-.marker-trail {
+.markerTrail {
   position: absolute;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
 
-.marker-trail::after {
+.markerTrail::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -428,12 +397,12 @@ html, body {
 }
 
 /* Path animation marker styles with distance-based speed */
-.path-animation-marker {
+.pathAnimationMarker {
   z-index: 1000;
   transition: transform 0.3s ease-out; /* Dynamic transition based on distance */
 }
 
-.path-animation-marker .custom-vehicle-marker {
+.pathAnimationMarker .customVehicleMarker {
   animation: markerPulse 2s ease-in-out infinite; /* Consistent pulse animation */
 }
 
@@ -453,14 +422,14 @@ html, body {
 }
 
 /* Continuous path styles */
-.continuous-path {
+.continuousPath {
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
   transition: all 0.5s ease-out;
 }
 
-.selected-continuous-path {
+.selectedContinuousPath {
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
@@ -478,7 +447,7 @@ html, body {
 }
 
 /* Animation progress indicator for distance-based speed */
-.animation-progress {
+.animationProgress {
   position: absolute;
   bottom: 80px;
   left: 50%;
@@ -494,7 +463,7 @@ html, body {
   align-items: center;
 }
 
-.progress-bar {
+.progressBar {
   width: 100%;
   height: 6px;
   background-color: rgba(0, 0, 0, 0.1);
@@ -503,7 +472,7 @@ html, body {
   margin-bottom: 5px;
 }
 
-.progress-fill {
+.progressFill {
   height: 100%;
   background: linear-gradient(90deg, #2196F3, #1976D2);
   border-radius: 3px;
@@ -511,7 +480,7 @@ html, body {
   position: relative;
 }
 
-.progress-fill::after {
+.progressFill::after {
   content: '';
   position: absolute;
   top: 0;
@@ -531,7 +500,7 @@ html, body {
   }
 }
 
-.progress-text {
+.progressText {
   font-size: 12px;
   color: #666;
   text-align: center;
@@ -539,19 +508,19 @@ html, body {
 }
 
 /* Pegman Styles */
-.pegman-container {
+.pegmanContainer {
   position: absolute;
   z-index: 1000;
   cursor: grab;
   transition: transform 0.2s ease;
 }
 
-.pegman-container.dragging {
+.pegmanContainerDragging {
   transform: scale(1.1);
   opacity: 0.8;
 }
 
-.pegman-icon {
+.pegmanIcon {
   width: 40px;
   height: 40px;
   background-color: #4285f4;
@@ -565,7 +534,7 @@ html, body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-.pegman-shadow {
+.pegmanShadow {
   position: absolute;
   bottom: -8px;
   left: 50%;
@@ -577,7 +546,7 @@ html, body {
 }
 
 /* Street View Panel Styles */
-.street-view-panel {
+.streetViewPanel {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -595,12 +564,12 @@ html, body {
   transition: all 0.3s ease;
 }
 
-.street-view-panel.open {
+.streetViewPanelOpen {
   opacity: 1;
   visibility: visible;
 }
 
-.street-view-header {
+.streetViewHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -610,13 +579,13 @@ html, body {
   border-radius: 12px 12px 0 0;
 }
 
-.street-view-header h3 {
+.streetViewHeader h3 {
   margin: 0;
   color: #495057;
   font-size: 18px;
 }
 
-.street-view-header .close-btn {
+.streetViewHeader .closeBtn {
   background: none;
   border: none;
   font-size: 20px;
@@ -631,30 +600,30 @@ html, body {
   transition: all 0.2s ease;
 }
 
-.street-view-header .close-btn:hover {
+.streetViewHeader .closeBtn:hover {
   color: #495057;
   background-color: #e9ecef;
 }
 
-.street-view-content {
+.streetViewContent {
   height: calc(100% - 60px);
   display: flex;
   flex-direction: column;
 }
 
-.street-view-image {
+.streetViewImage {
   flex: 1;
   position: relative;
   overflow: hidden;
 }
 
-.street-view-image img {
+.streetViewImage img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.street-view-info {
+.streetViewInfo {
   padding: 10px;
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
@@ -665,7 +634,7 @@ html, body {
   right: 0;
 }
 
-.loading-container {
+.loadingContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -674,7 +643,7 @@ html, body {
   color: white;
 }
 
-.error-container {
+.errorContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -685,7 +654,7 @@ html, body {
 }
 
 /* Road snapping indicator with distance-based speed */
-.road-snapping-indicator {
+.roadSnappingIndicator {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -698,7 +667,7 @@ html, body {
   margin-left: 10px;
 }
 
-.snapping-spinner {
+.snappingSpinner {
   width: 16px;
   height: 16px;
   border: 2px solid rgba(0, 0, 0, 0.1);
@@ -709,11 +678,11 @@ html, body {
 
 /* Mobile view styles */
 @media (max-width: 768px) {
-  .resizable-divider {
+  .resizableDivider {
     display: none;
   }
 
-  .main-content {
+  .mainContent {
     flex-direction: column;
   }
 
@@ -725,27 +694,27 @@ html, body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   }
 
-  .map-container {
+  .mapContainer {
     width: 100% !important;
     height: 40%;
   }
 
-  .vehicle-table {
+  .vehicleTable {
     font-size: 11px;
     min-width: 100%; /* Ensure table fits in mobile view */
   }
 
-  .vehicle-table th,
-  .vehicle-table td {
+  .vehicleTable th,
+  .vehicleTable td {
     padding: 6px 8px;
     max-width: 100px; /* Reduce max-width for mobile */
   }
 
-  .vehicle-table th {
+  .vehicleTable th {
     font-size: 10px;
   }
 
-  .map-controls-bottom {
+  .mapControlsBottom {
     bottom: 10px;
     left: 10px;
     transform: none;
@@ -755,28 +724,28 @@ html, body {
     padding: 8px 12px;
   }
 
-  .map-type-controls {
+  .mapTypeControls {
     flex-direction: column;
     gap: 8px;
   }
 
-  .map-type-btn {
+  .mapTypeBtn {
     padding: 6px 12px;
     font-size: 12px;
   }
 
-  .street-view-panel {
+  .streetViewPanel {
     width: 95%;
     height: 50%;
     max-height: 400px;
   }
 
-  .road-snapping-indicator {
+  .roadSnappingIndicator {
     font-size: 10px;
     padding: 6px 8px;
   }
 
-  .snapping-spinner {
+  .snappingSpinner {
     width: 12px;
     height: 12px;
   }

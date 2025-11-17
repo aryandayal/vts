@@ -487,49 +487,6 @@
   to { transform: rotate(360deg); }
 }
 
-/* Password input container */
-.password-input-container {
-  position: relative;
-}
-
-.password-toggle {
-  position: absolute;
-  right: 15px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #777;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 5px;
-}
-
-/* Password strength indicator */
-.password-strength-container {
-  margin-top: 10px;
-}
-
-.password-strength-bar {
-  height: 5px;
-  background-color: #eee;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 5px;
-}
-
-.strength-meter {
-  height: 100%;
-  width: 0;
-  transition: width 0.3s ease, background-color 0.3s;
-}
-
-.strength-text {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
 /* Responsive Styles */
 @media (max-width: 992px) {
   .form-grid {
@@ -620,5 +577,59 @@
   .loading-container .spinner {
     width: 30px;
     height: 30px;
+  }
+}
+/* Debug Panel Styles */
+.debug-panel {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.debug-panel h3 {
+  margin: 0;
+  padding: 10px 15px;
+  background-color: #e9ecef;
+  font-size: 16px;
+  color: #495057;
+}
+
+.debug-content {
+  padding: 15px;
+}
+
+.debug-error {
+  color: #dc3545;
+  margin-bottom: 10px;
+  padding: 10px;
+  background-color: #f8d7da;
+  border-radius: 4px;
+}
+
+.debug-item {
+  margin-bottom: 10px;
+}
+
+.debug-item strong {
+  display: inline-block;
+  min-width: 120px;
+}
+
+.debug-item pre {
+  background-color: #f1f1f1;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+/* Responsive adjustments for debug panel */
+@media (max-width: 768px) {
+  .debug-item strong {
+    display: block;
+    margin-bottom: 5px;
   }
 }

@@ -8,7 +8,7 @@ import { MdLayers, MdWhatshot, MdTimeline, MdCenterFocusStrong, MdInfo, MdZoomIn
 
 // Import Leaflet CSS for proper rendering
 import 'leaflet/dist/leaflet.css';
-import './mapview.css';
+import styles from './MapView.module.css';
 
 // Fix for default markers in Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -314,16 +314,16 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
 
   if (loading) {
     return (
-      <div className="no-devices-message">
+      <div className={styles.noDevicesMessage}>
         <p>Loading devices from AIS-140 system...</p>
-        <div className="loading-spinner"></div>
+        <div className={styles.loadingSpinner}></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="no-devices-message">
+      <div className={styles.noDevicesMessage}>
         <p>Error loading devices: {error}</p>
         <button onClick={() => window.location.reload()}>Retry Connection</button>
       </div>
@@ -331,16 +331,16 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
   }
 
   return (
-    <div className="table-container">
+    <div className={styles.tableContainer}>
       {Object.keys(devices).length === 0 ? (
-        <div className="no-devices-message">
+        <div className={styles.noDevicesMessage}>
           <p>No M66 devices connected. Waiting for GPS data...</p>
-          <div className="loading-spinner"></div>
+          <div className={styles.loadingSpinner}></div>
           <p style={{ fontSize: '12px', marginTop: '10px' }}>Make sure your AIS-140 system is running on port 5025</p>
         </div>
       ) : (
-        <div className="table-wrapper">
-          <table className="vehicle-table">
+        <div className={styles.tableWrapper}>
+          <table className={styles.vehicleTable}>
             <thead>
               <tr>
                 <th style={{ width: '40px' }}><input type="checkbox" checked={selectAll} onChange={handleSelectAll} /></th>
@@ -361,7 +361,7 @@ const VehicleTable = ({ devices, onDeviceSelect, selectedDeviceId, loading, erro
                 return (
                   <tr 
                     key={imei} 
-                    className={selectedDeviceId === imei ? 'selected-row' : ''} 
+                    className={selectedDeviceId === imei ? styles.trSelectedRow : ''} 
                     onClick={(e) => handleRowClick(imei, e)}
                   >
                     <td onClick={(e) => {
@@ -792,8 +792,8 @@ const ResizableDivider = ({ onResize }) => {
   }, [isDragging, onResize]);
 
   return (
-    <div className={`resizable-divider ${isDragging ? 'dragging' : ''}`} onMouseDown={handleMouseDown}>
-      <div className="divider-line"></div>
+    <div className={`${styles.resizableDivider} ${isDragging ? styles.dragging : ''}`} onMouseDown={handleMouseDown}>
+      <div className={styles.dividerLine}></div>
     </div>
   );
 };
@@ -1412,13 +1412,13 @@ function MapView() {
   }
 
   return (
-    <div className="map-view-container">
+    <div className={styles.container}>
       <Helmet>
         <title>AIS-140 GPS Tracking Dashboard</title>
       </Helmet>
       <VehicleIndicator devices={devicesData} />
-      <div className="main-content">
-        <div className="sidebar" style={{ width: `${sidebarWidth}%` }}>
+      <div className={styles.mainContent}>
+        <div className={styles.sidebar} style={{ width: `${sidebarWidth}%` }}>
           <VehicleTable
             devices={devicesData}
             onDeviceSelect={handleDeviceSelect}
@@ -1428,23 +1428,23 @@ function MapView() {
           />
         </div>
         <ResizableDivider onResize={handleSidebarResize} />
-        <div className="map-container" style={{ width: `${100 - sidebarWidth}%` }}>
-          <div className="map-controls-bottom">
-            <div className="map-type-controls">
-              <button className={`map-type-btn ${mapType === 'roadmap' ? 'active' : ''}`} onClick={() => setMapType('roadmap')}>
+        <div className={styles.mapContainer} style={{ width: `${100 - sidebarWidth}%` }}>
+          <div className={styles.mapControlsBottom}>
+            <div className={styles.mapTypeControls}>
+              <button className={`${styles.mapTypeBtn} ${mapType === 'roadmap' ? styles.mapTypeBtnActive : ''}`} onClick={() => setMapType('roadmap')}>
                 Map
               </button>
-              <button className={`map-type-btn ${mapType === 'satellite' ? 'active' : ''}`} onClick={() => setMapType('satellite')}>
+              <button className={`${styles.mapTypeBtn} ${mapType === 'satellite' ? styles.mapTypeBtnActive : ''}`} onClick={() => setMapType('satellite')}>
                 Satellite
               </button>
-              <button className={`map-type-btn ${mapType === 'hybrid' ? 'active' : ''}`} onClick={() => setMapType('hybrid')}>
+              <button className={`${styles.mapTypeBtn} ${mapType === 'hybrid' ? styles.mapTypeBtnActive : ''}`} onClick={() => setMapType('hybrid')}>
                 Hybrid
               </button>
-              <button className={`map-type-btn ${mapType === 'terrain' ? 'active' : ''}`} onClick={() => setMapType('terrain')}>
+              <button className={`${styles.mapTypeBtn} ${mapType === 'terrain' ? styles.mapTypeBtnActive : ''}`} onClick={() => setMapType('terrain')}>
                 Terrain
               </button>
             </div>
-            <div className="connection-status">
+            <div className={styles.connectionStatus}>
               <StatusIndicator status={apiStatus} />
               <span style={{ marginLeft: '8px' }}>
                 {apiStatus === 'connected' ? 'Device Connected' : apiStatus === 'checking' ? 'Checking...' : 'Connection Error'}
@@ -1455,7 +1455,7 @@ function MapView() {
             key={mapKey} // Add key to force re-creation of map
             center={smoothCenter}
             zoom={zoomLevel}
-            className="map-view"
+            className={styles.mapView}
             attributionControl={false}
             whenCreated={(mapInstance) => {
               mapRef.current = mapInstance;
@@ -1488,7 +1488,7 @@ function MapView() {
                       weight={isSelected ? 5 : 3}
                       opacity={isSelected ? 0.9 : 0.7}
                       smoothFactor={1}
-                      className={isSelected ? "selected-realtime-path" : "realtime-path"}
+                      className={isSelected ? styles.selectedRealtimePath : styles.realtimePath}
                       dashArray="10, 5"
                     />
                   )}
@@ -1510,48 +1510,48 @@ function MapView() {
                         )}
                       </Tooltip>
                       <Popup>
-                        <div className="popup-content">
-                          <div className="popup-header">
+                        <div className={styles.popupContent}>
+                          <div className={styles.popupHeader}>
                             <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
                           </div>
-                          <div className="popup-body">
-                            <div className="popup-info-grid">
-                              <div className="info-row">
-                                <span className="info-label">IMEI:</span>
-                                <span className="info-value">{imei}</span>
+                          <div className={styles.popupBody}>
+                            <div className={styles.popupInfoGrid}>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>IMEI:</span>
+                                <span className={styles.infoValue}>{imei}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Vehicle Registration:</span>
-                                <span className="info-value">{device.vehicle_registration || 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Vehicle Registration:</span>
+                                <span className={styles.infoValue}>{device.vehicle_registration || 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Status:</span>
-                                <span className="info-value">
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Status:</span>
+                                <span className={styles.infoValue}>
                                   <StatusIndicator status={device.is_active ? (device.speed > 0 ? "running" : "idle") : "stopped"} />
                                   <span style={{ marginLeft: '8px' }}>
                                     {device.is_active ? (device.speed > 0 ? 'Running' : 'Idle') : 'Stopped'}
                                   </span>
                                 </span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Location:</span>
-                                <span className="info-value">{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Location:</span>
+                                <span className={styles.infoValue}>{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Speed:</span>
-                                <span className="info-value">{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Speed:</span>
+                                <span className={styles.infoValue}>{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Last Updated:</span>
-                                <span className="info-value">{formatDateTime(device.last_update || device.last_seen)}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Last Updated:</span>
+                                <span className={styles.infoValue}>{formatDateTime(device.last_update || device.last_seen)}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Battery:</span>
-                                <span className="info-value">{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Battery:</span>
+                                <span className={styles.infoValue}>{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Network:</span>
-                                <span className="info-value">{device.network_operator || 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Network:</span>
+                                <span className={styles.infoValue}>{device.network_operator || 'N/A'}</span>
                               </div>
                             </div>
                           </div>
@@ -1583,48 +1583,48 @@ function MapView() {
                         )}
                       </Tooltip>
                       <Popup>
-                        <div className="popup-content">
-                          <div className="popup-header">
+                        <div className={styles.popupContent}>
+                          <div className={styles.popupHeader}>
                             <h3>{device.device_name || `M66-${imei.slice(-4)}`}</h3>
                           </div>
-                          <div className="popup-body">
-                            <div className="popup-info-grid">
-                              <div className="info-row">
-                                <span className="info-label">IMEI:</span>
-                                <span className="info-value">{imei}</span>
+                          <div className={styles.popupBody}>
+                            <div className={styles.popupInfoGrid}>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>IMEI:</span>
+                                <span className={styles.infoValue}>{imei}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Vehicle Registration:</span>
-                                <span className="info-value">{device.vehicle_registration || 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Vehicle Registration:</span>
+                                <span className={styles.infoValue}>{device.vehicle_registration || 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Status:</span>
-                                <span className="info-value">
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Status:</span>
+                                <span className={styles.infoValue}>
                                   <StatusIndicator status={device.is_active ? (device.speed > 0 ? "running" : "idle") : "stopped"} />
                                   <span style={{ marginLeft: '8px' }}>
                                     {device.is_active ? (device.speed > 0 ? 'Running' : 'Idle') : 'Stopped'}
                                   </span>
                                 </span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Location:</span>
-                                <span className="info-value">{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Location:</span>
+                                <span className={styles.infoValue}>{safeToFixed(coords.latitude)}, {safeToFixed(coords.longitude)}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Speed:</span>
-                                <span className="info-value">{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Speed:</span>
+                                <span className={styles.infoValue}>{device.speed ? `${device.speed} km/h` : 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Last Updated:</span>
-                                <span className="info-value">{formatDateTime(device.last_update || device.last_seen)}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Last Updated:</span>
+                                <span className={styles.infoValue}>{formatDateTime(device.last_update || device.last_seen)}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Battery:</span>
-                                <span className="info-value">{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Battery:</span>
+                                <span className={styles.infoValue}>{device.battery_voltage ? `${device.battery_voltage}V` : 'N/A'}</span>
                               </div>
-                              <div className="info-row">
-                                <span className="info-label">Network:</span>
-                                <span className="info-value">{device.network_operator || 'N/A'}</span>
+                              <div className={styles.infoRow}>
+                                <span className={styles.infoLabel}>Network:</span>
+                                <span className={styles.infoValue}>{device.network_operator || 'N/A'}</span>
                               </div>
                             </div>
                           </div>

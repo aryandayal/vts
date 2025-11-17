@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiSearch, FiChevronDown, FiChevronUp, FiMapPin, FiUpload, FiDownload, FiFileText, FiFile } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiSearch, FiChevronDown, FiChevronUp, FiMapPin, FiUpload, FiDownload, FiFileText, FiFile, FiRefreshCw } from 'react-icons/fi';
 import Cookies from 'js-cookie';
+import Header from "../components/Header";
+import BottomNavbar from "../components/BottomNavbar";
 import './jsfcgodown.css';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -11,16 +13,16 @@ const JsfcGodown = () => {
   const [godowns, setGodowns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userInfo, setUserInfo] = useState(null);
   
-  // Form state
+  // Form state - using API field names
   const [formData, setFormData] = useState({
-    id: '',
     name: '',
     contact: '',
     address: '',
     district: '',
-    pincode: '',
-    godownNumber: '',
+    pin_code: '', // Changed from pincode to pin_code
+    godown_no: '', // Changed from godownNumber to godown_no
     latitude: '',
     longitude: ''
   });
@@ -28,6 +30,7 @@ const JsfcGodown = () => {
   // UI states
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState(null); // Track the ID being edited
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
   const [expandedRows, setExpandedRows] = useState({});
@@ -39,10 +42,27 @@ const JsfcGodown = () => {
   
   // API base URL
   const API_URL = 'http://3.109.186.142:3005/api/godowns';
+  const AUTH_URL = 'http://3.109.186.142:3005/api/auth';
   
   // Get auth token
   const getAuthToken = () => {
     return Cookies.get('token');
+  };
+  
+  // Get user info from token
+  const getUserInfo = () => {
+    const token = Cookies.get('token');
+    if (!token) return null;
+    
+    try {
+      // JWT tokens are base64 encoded, so we can decode the payload
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setUserInfo(payload);
+      return payload;
+    } catch (e) {
+      console.error('Error decoding token:', e);
+      return null;
+    }
   };
   
   // Fetch godowns from API
@@ -53,10 +73,69 @@ const JsfcGodown = () => {
     try {
       const token = getAuthToken();
       if (!token) {
-        throw new Error('Authentication token not found');
+        throw new Error('Authentication token not found. Please login again.');
       }
       
       const response = await fetch(API_URL, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token expired or invalid
+          handleLogout();
+          throw new Error('Session expired. Please login again.');
+        }
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // Handle different response structures
+      let godownsArray = [];
+      if (data && data.data && Array.isArray(data.data)) {
+        // Response structure: { data: [...] }
+        godownsArray = data.data;
+      } else if (data && data.godowns && Array.isArray(data.godowns)) {
+        // Response structure: { godowns: [...] }
+        godownsArray = data.godowns;
+      } else if (Array.isArray(data)) {
+        // Response is directly an array
+        godownsArray = data;
+      } else {
+        console.error('Unexpected API response structure:', data);
+        throw new Error('Unexpected API response structure');
+      }
+      
+      setGodowns(godownsArray);
+    } catch (err) {
+      console.error('Error fetching godowns:', err);
+      setError(err.message || 'Failed to fetch godowns');
+      setGodowns([]); // Ensure godowns is always an array
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Load godowns and user info on component mount
+  useEffect(() => {
+    getUserInfo();
+    fetchGodowns();
+  }, []);
+  
+  // Fetch a single godown by ID
+  const fetchGodownById = async (id) => {
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      const response = await fetch(`${API_URL}/${id}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -69,45 +148,62 @@ const JsfcGodown = () => {
       }
       
       const data = await response.json();
-      setGodowns(data);
+      
+      // Handle different response structures
+      if (data && data.data) {
+        // Response structure: { data: godown }
+        return data.data;
+      } else if (data && data.godown) {
+        // Response structure: { godown: godown }
+        return data.godown;
+      } else {
+        // Response is directly the godown
+        return data;
+      }
     } catch (err) {
-      console.error('Error fetching godowns:', err);
-      setError(err.message || 'Failed to fetch godowns');
-    } finally {
-      setLoading(false);
+      console.error('Error fetching godown:', err);
+      throw err;
     }
   };
   
-  // Load godowns on component mount
-  useEffect(() => {
-    fetchGodowns();
-  }, []);
+  // Handle logout
+  const handleLogout = () => {
+    Cookies.remove('token');
+    setUserInfo(null);
+    window.location.href = '/login'; // Redirect to login page
+  };
   
-  // Filter and sort godowns
+  // Filter and sort godowns with safeguards
   const filteredGodowns = useMemo(() => {
-    let result = [...godowns];
+    // Ensure godowns is always an array
+    const godownsArray = Array.isArray(godowns) ? godowns : [];
     
-    // Apply search filter
+    let result = [...godownsArray];
+    
+    // Apply search filter - using API field names
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(godown => 
-        godown.id?.toLowerCase().includes(term) ||
         godown.name?.toLowerCase().includes(term) ||
         godown.contact?.toLowerCase().includes(term) ||
         godown.address?.toLowerCase().includes(term) ||
         godown.district?.toLowerCase().includes(term) ||
-        godown.pincode?.toLowerCase().includes(term) ||
-        godown.godownNumber?.toLowerCase().includes(term)
+        godown.pin_code?.toLowerCase().includes(term) ||
+        godown.godown_no?.toLowerCase().includes(term)
       );
     }
     
     // Apply sorting
     if (sortConfig.key) {
       result.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        // Handle null/undefined values
+        const aValue = a[sortConfig.key] || '';
+        const bValue = b[sortConfig.key] || '';
+        
+        if (aValue < bValue) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (aValue > bValue) {
           return sortConfig.direction === 'ascending' ? 1 : -1;
         }
         return 0;
@@ -134,14 +230,35 @@ const JsfcGodown = () => {
     try {
       const token = getAuthToken();
       if (!token) {
-        throw new Error('Authentication token not found');
+        throw new Error('Authentication token not found. Please login again.');
       }
+      
+      // Create a copy of form data to ensure all fields are included
+      const requestData = {
+        name: formData.name,
+        contact: formData.contact,
+        address: formData.address,
+        district: formData.district,
+        pin_code: formData.pin_code, // Using API field name
+        godown_no: formData.godown_no, // Using API field name
+        latitude: formData.latitude,
+        longitude: formData.longitude
+      };
+      
+      // Add ID only when editing
+      if (isEditing && editingId) {
+        requestData.id = editingId;
+      }
+      
+      // Log the data being sent for debugging
+      console.log('Sending data:', requestData);
       
       let url = API_URL;
       let method = 'POST';
       
-      if (isEditing) {
-        url = `${API_URL}/${formData.id}`;
+      if (isEditing && editingId) {
+        // Use PUT method with the specific godown ID
+        url = `${API_URL}/${editingId}`;
         method = 'PUT';
       }
       
@@ -151,12 +268,21 @@ const JsfcGodown = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(requestData)
       });
       
       if (!response.ok) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
+        if (response.status === 401) {
+          handleLogout();
+          throw new Error('Session expired. Please login again.');
+        }
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+        throw new Error(errorData.message || `Error: ${response.status} ${response.statusText}`);
       }
+      
+      const responseData = await response.json();
+      console.log('Success response:', responseData);
       
       // Refresh godowns list
       await fetchGodowns();
@@ -164,14 +290,14 @@ const JsfcGodown = () => {
       // Reset form and UI state
       setIsAdding(false);
       setIsEditing(false);
+      setEditingId(null);
       setFormData({
-        id: '',
         name: '',
         contact: '',
         address: '',
         district: '',
-        pincode: '',
-        godownNumber: '',
+        pin_code: '', // Using API field name
+        godown_no: '', // Using API field name
         latitude: '',
         longitude: ''
       });
@@ -186,10 +312,31 @@ const JsfcGodown = () => {
   };
   
   // Edit a godown
-  const handleEdit = (godown) => {
-    setFormData(godown);
-    setIsEditing(true);
-    setIsAdding(true);
+  const handleEdit = async (godown) => {
+    try {
+      // Fetch the complete godown data
+      const godownData = await fetchGodownById(godown.id);
+      
+      // Set the form data with the godown details - using API field names
+      setFormData({
+        name: godownData.name || '',
+        contact: godownData.contact || '',
+        address: godownData.address || '',
+        district: godownData.district || '',
+        pin_code: godownData.pin_code || '', // Using API field name
+        godown_no: godownData.godown_no || '', // Using API field name
+        latitude: godownData.latitude || '',
+        longitude: godownData.longitude || ''
+      });
+      
+      // Set editing state
+      setIsEditing(true);
+      setIsAdding(true);
+      setEditingId(godown.id);
+    } catch (err) {
+      console.error('Error fetching godown details:', err);
+      alert('Failed to fetch godown details');
+    }
   };
   
   // Delete a godown
@@ -201,7 +348,7 @@ const JsfcGodown = () => {
     try {
       const token = getAuthToken();
       if (!token) {
-        throw new Error('Authentication token not found');
+        throw new Error('Authentication token not found. Please login again.');
       }
       
       const response = await fetch(`${API_URL}/${id}`, {
@@ -213,6 +360,10 @@ const JsfcGodown = () => {
       });
       
       if (!response.ok) {
+        if (response.status === 401) {
+          handleLogout();
+          throw new Error('Session expired. Please login again.');
+        }
         throw new Error(`Error: ${response.status} ${response.statusText}`);
       }
       
@@ -229,14 +380,14 @@ const JsfcGodown = () => {
   const handleCancel = () => {
     setIsAdding(false);
     setIsEditing(false);
+    setEditingId(null);
     setFormData({
-      id: '',
       name: '',
       contact: '',
       address: '',
       district: '',
-      pincode: '',
-      godownNumber: '',
+      pin_code: '', // Using API field name
+      godown_no: '', // Using API field name
       latitude: '',
       longitude: ''
     });
@@ -289,30 +440,24 @@ const JsfcGodown = () => {
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
-        // Process imported data
+        // Process imported data - using API field names
         const importedGodowns = jsonData.map((row, index) => {
-          // Generate ID if not present
-          const id = row.id || `GD-${String(godowns.length + index + 1).padStart(3, '0')}`;
-          
           return {
-            id,
             name: row.name || '',
             contact: row.contact || '',
             address: row.address || '',
             district: row.district || '',
-            pincode: row.pincode || '',
-            godownNumber: row.godownNumber || '',
+            pin_code: row.pin_code || row.pincode || '', // Handle both field names
+            godown_no: row.godown_no || row.godownNumber || '', // Handle both field names
             latitude: row.latitude || '',
-            longitude: row.longitude || '',
-            capacity: row.capacity || 'Not specified',
-            manager: row.manager || 'Not assigned'
+            longitude: row.longitude || ''
           };
         });
         
         // Get token
         const token = getAuthToken();
         if (!token) {
-          throw new Error('Authentication token not found');
+          throw new Error('Authentication token not found. Please login again.');
         }
         
         // Send each godown to the API
@@ -350,19 +495,19 @@ const JsfcGodown = () => {
   
   // Export to Excel
   const handleExportExcel = () => {
-    // Prepare data for export
-    const exportData = filteredGodowns.map(godown => ({
-      ID: godown.id,
+    // Ensure filteredGodowns is an array
+    const godownsToExport = Array.isArray(filteredGodowns) ? filteredGodowns : [];
+    
+    // Prepare data for export - using API field names
+    const exportData = godownsToExport.map(godown => ({
       Name: godown.name,
       Contact: godown.contact,
       Address: godown.address,
       District: godown.district,
-      Pincode: godown.pincode,
-      'Godown Number': godown.godownNumber,
+      Pincode: godown.pin_code, // Using API field name
+      'Godown Number': godown.godown_no, // Using API field name
       Latitude: godown.latitude,
-      Longitude: godown.longitude,
-      Capacity: godown.capacity || 'Not specified',
-      Manager: godown.manager || 'Not assigned'
+      Longitude: godown.longitude
     }));
     
     // Create workbook
@@ -376,6 +521,9 @@ const JsfcGodown = () => {
   
   // Export to PDF
   const handleExportPDF = () => {
+    // Ensure filteredGodowns is an array
+    const godownsToExport = Array.isArray(filteredGodowns) ? filteredGodowns : [];
+    
     // Create new PDF document
     const doc = new jsPDF();
     
@@ -387,25 +535,23 @@ const JsfcGodown = () => {
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 105, 25, { align: 'center' });
     
-    // Prepare table data
-    const tableData = filteredGodowns.map(godown => [
-      godown.id,
+    // Prepare table data - using API field names
+    const tableData = godownsToExport.map(godown => [
       godown.name,
       godown.contact,
       godown.district,
-      godown.pincode,
-      godown.godownNumber,
+      godown.pin_code, // Using API field name
+      godown.godown_no, // Using API field name
       `${godown.latitude}, ${godown.longitude}`
     ]);
     
     // Define table columns
     const tableColumns = [
-      { header: 'ID', dataKey: 'id' },
       { header: 'Name', dataKey: 'name' },
       { header: 'Contact', dataKey: 'contact' },
       { header: 'District', dataKey: 'district' },
-      { header: 'Pincode', dataKey: 'pincode' },
-      { header: 'Godown No.', dataKey: 'godownNumber' },
+      { header: 'Pincode', dataKey: 'pin_code' },
+      { header: 'Godown No.', dataKey: 'godown_no' },
       { header: 'Location', dataKey: 'location' }
     ];
     
@@ -432,12 +578,10 @@ const JsfcGodown = () => {
   };
   
   return (
+    <>
+      <Header />
+      <BottomNavbar text="JSFC Godown Management" />
     <div className="jsfc-godown-container">
-      <div className="page-header">
-        <h1>JSFC Godown Management</h1>
-        <p>Manage godown details and locations</p>
-      </div>
-      
       <div className="actions-bar">
         <div className="search-container">
           <div className="search-input">
@@ -454,9 +598,31 @@ const JsfcGodown = () => {
         <div className="action-buttons">
           <button 
             className="btn btn-primary" 
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setIsAdding(true);
+              setIsEditing(false);
+              setEditingId(null);
+              setFormData({
+                name: '',
+                contact: '',
+                address: '',
+                district: '',
+                pin_code: '', // Using API field name
+                godown_no: '', // Using API field name
+                latitude: '',
+                longitude: ''
+              });
+            }}
           >
             <FiPlus /> Add New Godown
+          </button>
+          
+          <button 
+            className="btn btn-secondary" 
+            onClick={fetchGodowns}
+            disabled={loading}
+          >
+            <FiRefreshCw /> {loading ? 'Refreshing...' : 'Refresh'}
           </button>
           
           <div className="dropdown">
@@ -503,25 +669,25 @@ const JsfcGodown = () => {
           <form onSubmit={handleSubmit} className="godown-form">
             <div className="form-grid">
               <div className="form-group">
-                <label>Godown Name</label>
+                <label>Name</label>
                 <input
                   type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
-                  placeholder="Enter godown name"
+                  placeholder="Enter name"
                   required
                 />
               </div>
               
               <div className="form-group">
-                <label>Contact Number</label>
+                <label>Contact</label>
                 <input
                   type="tel"
                   name="contact"
                   value={formData.contact}
                   onChange={handleInputChange}
-                  placeholder="Enter contact number"
+                  placeholder="Enter contact"
                   required
                 />
               </div>
@@ -542,8 +708,8 @@ const JsfcGodown = () => {
                 <label>Pincode</label>
                 <input
                   type="text"
-                  name="pincode"
-                  value={formData.pincode}
+                  name="pin_code" // Using API field name
+                  value={formData.pin_code}
                   onChange={handleInputChange}
                   placeholder="Enter pincode"
                   pattern="[0-9]{6}"
@@ -556,8 +722,8 @@ const JsfcGodown = () => {
                 <label>Godown Number</label>
                 <input
                   type="text"
-                  name="godownNumber"
-                  value={formData.godownNumber}
+                  name="godown_no" // Using API field name
+                  value={formData.godown_no}
                   onChange={handleInputChange}
                   placeholder="Enter godown number"
                   required
@@ -627,7 +793,7 @@ const JsfcGodown = () => {
         <div className="table-header">
           <h2>Godown Records</h2>
           <div className="table-info">
-            Showing {filteredGodowns.length} of {godowns.length} godowns
+            Showing {Array.isArray(filteredGodowns) ? filteredGodowns.length : 0} of {Array.isArray(godowns) ? godowns.length : 0} godowns
           </div>
         </div>
         
@@ -648,9 +814,6 @@ const JsfcGodown = () => {
             <table className="godown-table">
               <thead>
                 <tr>
-                  <th onClick={() => requestSort('id')}>
-                    ID {getSortIndicator('id')}
-                  </th>
                   <th onClick={() => requestSort('name')}>
                     Name {getSortIndicator('name')}
                   </th>
@@ -660,26 +823,25 @@ const JsfcGodown = () => {
                   <th onClick={() => requestSort('district')}>
                     District {getSortIndicator('district')}
                   </th>
-                  <th onClick={() => requestSort('pincode')}>
-                    Pincode {getSortIndicator('pincode')}
+                  <th onClick={() => requestSort('pin_code')}>
+                    Pincode {getSortIndicator('pin_code')}
                   </th>
                   <th>Location</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredGodowns.length > 0 ? (
+                {Array.isArray(filteredGodowns) && filteredGodowns.length > 0 ? (
                   filteredGodowns.map((godown) => (
                     <React.Fragment key={godown.id}>
                       <tr 
                         className={`godown-row ${expandedRows[godown.id] ? 'expanded' : ''}`}
                         onClick={() => toggleRowExpansion(godown.id)}
                       >
-                        <td>{godown.id}</td>
                         <td>{godown.name}</td>
                         <td>{godown.contact}</td>
                         <td>{godown.district}</td>
-                        <td>{godown.pincode}</td>
+                        <td>{godown.pin_code}</td> {/* Using API field name */}
                         <td>
                           <div className="location-info">
                             <FiMapPin className="location-icon" />
@@ -705,23 +867,15 @@ const JsfcGodown = () => {
                       </tr>
                       {expandedRows[godown.id] && (
                         <tr className="expanded-row">
-                          <td colSpan="7">
+                          <td colSpan="6">
                             <div className="expanded-content">
                               <div className="detail-row">
                                 <div className="detail-label">Godown Number:</div>
-                                <div className="detail-value">{godown.godownNumber}</div>
+                                <div className="detail-value">{godown.godown_no}</div> {/* Using API field name */}
                               </div>
                               <div className="detail-row">
-                                <div className="detail-label">Complete Address:</div>
+                                <div className="detail-label">Address:</div>
                                 <div className="detail-value">{godown.address}</div>
-                              </div>
-                              <div className="detail-row">
-                                <div className="detail-label">Capacity:</div>
-                                <div className="detail-value">{godown.capacity || 'Not specified'}</div>
-                              </div>
-                              <div className="detail-row">
-                                <div className="detail-label">Manager:</div>
-                                <div className="detail-value">{godown.manager || 'Not assigned'}</div>
                               </div>
                               <div className="detail-row">
                                 <div className="detail-label">Coordinates:</div>
@@ -744,7 +898,7 @@ const JsfcGodown = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="no-data">
+                    <td colSpan="6" className="no-data">
                       No godown records found
                     </td>
                   </tr>
@@ -755,6 +909,7 @@ const JsfcGodown = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 

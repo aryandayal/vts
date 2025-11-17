@@ -39,7 +39,7 @@ const Header = () => {
 
   const handleLogout = async () => {
     try {
-      const token = Cookies.get('token');
+      const token = Cookies.get('accessToken'); // Changed from 'token' to 'accessToken'
       
       console.log('Logging out...');
       console.log('Token before removal:', token);
@@ -68,7 +68,8 @@ const Header = () => {
       }
       
       // Clear cookies
-      Cookies.remove('token', { path: '/' });
+      Cookies.remove('accessToken', { path: '/' }); // Changed from 'token' to 'accessToken'
+      Cookies.remove('refreshToken', { path: '/' }); // Add refreshToken removal
       Cookies.remove('user', { path: '/' });
       
       // Clear context
@@ -87,7 +88,8 @@ const Header = () => {
       console.error('Error during logout:', error);
       
       // Still clear everything even if there's an error
-      Cookies.remove('token', { path: '/' });
+      Cookies.remove('accessToken', { path: '/' }); // Changed from 'token' to 'accessToken'
+      Cookies.remove('refreshToken', { path: '/' }); // Add refreshToken removal
       Cookies.remove('user', { path: '/' });
       setUser(null);
       localStorage.clear();
@@ -95,6 +97,14 @@ const Header = () => {
       setIsMenuOpen(false);
       setActiveDropdown(null);
     }
+  };
+
+  // Get display name for user
+  const getUserDisplayName = () => {
+    if (!user) return 'Account';
+    
+    // Try to get full_name first, then user_id, then fall back to 'Account'
+    return user.full_name || user.user_id || 'Account';
   };
 
   return (
@@ -113,17 +123,7 @@ const Header = () => {
           </button>
         </div>
         
-        {user && (
-          <div className="user-welcome">
-            <div className="user-avatar">
-              <i className="fas fa-user-circle"></i>
-            </div>
-            <div className="user-info">
-              <span className="welcome-text">Welcome,</span>
-              <span className="username">{user.username}</span>
-            </div>
-          </div>
-        )}
+        {/* User welcome section removed */}
         
         <nav className={`nav-menu ${isMenuOpen ? 'active' : ''}`}>
           <ul className="nav-list">
@@ -138,6 +138,14 @@ const Header = () => {
               <Link to="/vehicle-tracking" className="nav-link">
                 <i className="fas fa-truck-moving"></i> 
                 <span>Vehicle Tracking</span>
+              </Link>
+            </li>
+            
+            {/* Added JSFC Godown menu item */}
+            <li className="nav-item">
+              <Link to="/jsfc-godown" className="nav-link">
+                <i className="fas fa-warehouse"></i> 
+                <span>JSFC Godown</span>
               </Link>
             </li>
             
@@ -204,7 +212,7 @@ const Header = () => {
                 onClick={() => toggleDropdown(4)}
               >
                 <i className="fas fa-user-circle"></i> 
-                <span>{user?.username || 'Account'}</span>
+                <span>{getUserDisplayName()}</span>
                 <i className={`fas ${activeDropdown === 4 ? 'fa-chevron-up' : 'fa-chevron-down'} dropdown-icon`}></i>
               </div>
               <ul className="dropdown-menu">

@@ -41,21 +41,21 @@ function App() {
           } />
           
           <Route path="/vehicle-tracking" element={
-            // <PrivateRoute>
+            <PrivateRoute>
               <VehicleTracking />
-            // </PrivateRoute>
+              </PrivateRoute>
           } />
           
           <Route path="/jsfc-godown" element={
             <PrivateRoute>
               <JsfcGodown />
-            </PrivateRoute>
+             </PrivateRoute>
           } />
 
             <Route path="/transporter" element={
-            // <PrivateRoute>
+            <PrivateRoute>
               <Transporter />
-            // </PrivateRoute>
+            </PrivateRoute>
           } />
           
           {/* Map Routes */}
