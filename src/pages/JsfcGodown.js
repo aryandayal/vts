@@ -17,12 +17,12 @@ const JsfcGodown = () => {
   
   // Form state - using API field names
   const [formData, setFormData] = useState({
-    name: '',
+    godown_name: '', // Changed from name to godown_name
     contact: '',
     address: '',
     district: '',
-    pin_code: '', // Changed from pincode to pin_code
-    godown_no: '', // Changed from godownNumber to godown_no
+    pin: '', // Changed from pin_code to pin
+    godown_no: '',
     latitude: '',
     longitude: ''
   });
@@ -30,9 +30,9 @@ const JsfcGodown = () => {
   // UI states
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingId, setEditingId] = useState(null); // Track the ID being edited
+  const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'ascending' });
+  const [sortConfig, setSortConfig] = useState({ key: 'godown_name', direction: 'ascending' });
   const [expandedRows, setExpandedRows] = useState({});
   const [importing, setImporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -95,23 +95,14 @@ const JsfcGodown = () => {
       
       const data = await response.json();
       
-      // Handle different response structures
-      let godownsArray = [];
-      if (data && data.data && Array.isArray(data.data)) {
-        // Response structure: { data: [...] }
-        godownsArray = data.data;
-      } else if (data && data.godowns && Array.isArray(data.godowns)) {
-        // Response structure: { godowns: [...] }
-        godownsArray = data.godowns;
-      } else if (Array.isArray(data)) {
-        // Response is directly an array
-        godownsArray = data;
+      // Handle the specific API response structure
+      if (data && data.data && data.data.godowns && Array.isArray(data.data.godowns)) {
+        // Response structure: { data: { godowns: [...] } }
+        setGodowns(data.data.godowns);
       } else {
         console.error('Unexpected API response structure:', data);
         throw new Error('Unexpected API response structure');
       }
-      
-      setGodowns(godownsArray);
     } catch (err) {
       console.error('Error fetching godowns:', err);
       setError(err.message || 'Failed to fetch godowns');
@@ -149,13 +140,13 @@ const JsfcGodown = () => {
       
       const data = await response.json();
       
-      // Handle different response structures
-      if (data && data.data) {
-        // Response structure: { data: godown }
+      // Handle the API response structure for single godown
+      if (data && data.data && data.data.godown) {
+        // Response structure: { data: { godown: {...} } }
+        return data.data.godown;
+      } else if (data && data.data) {
+        // Response structure: { data: {...} }
         return data.data;
-      } else if (data && data.godown) {
-        // Response structure: { godown: godown }
-        return data.godown;
       } else {
         // Response is directly the godown
         return data;
@@ -184,11 +175,11 @@ const JsfcGodown = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(godown => 
-        godown.name?.toLowerCase().includes(term) ||
+        godown.godown_name?.toLowerCase().includes(term) ||
         godown.contact?.toLowerCase().includes(term) ||
         godown.address?.toLowerCase().includes(term) ||
         godown.district?.toLowerCase().includes(term) ||
-        godown.pin_code?.toLowerCase().includes(term) ||
+        godown.pin?.toLowerCase().includes(term) ||
         godown.godown_no?.toLowerCase().includes(term)
       );
     }
@@ -234,15 +225,16 @@ const JsfcGodown = () => {
       }
       
       // Create a copy of form data to ensure all fields are included
+      // Convert latitude and longitude to numbers as expected by API
       const requestData = {
-        name: formData.name,
+        godown_name: formData.godown_name,
         contact: formData.contact,
         address: formData.address,
         district: formData.district,
-        pin_code: formData.pin_code, // Using API field name
-        godown_no: formData.godown_no, // Using API field name
-        latitude: formData.latitude,
-        longitude: formData.longitude
+        pin: formData.pin,
+        godown_no: formData.godown_no,
+        latitude: parseFloat(formData.latitude),
+        longitude: parseFloat(formData.longitude)
       };
       
       // Add ID only when editing
@@ -292,12 +284,12 @@ const JsfcGodown = () => {
       setIsEditing(false);
       setEditingId(null);
       setFormData({
-        name: '',
+        godown_name: '',
         contact: '',
         address: '',
         district: '',
-        pin_code: '', // Using API field name
-        godown_no: '', // Using API field name
+        pin: '',
+        godown_no: '',
         latitude: '',
         longitude: ''
       });
@@ -319,12 +311,12 @@ const JsfcGodown = () => {
       
       // Set the form data with the godown details - using API field names
       setFormData({
-        name: godownData.name || '',
+        godown_name: godownData.godown_name || '',
         contact: godownData.contact || '',
         address: godownData.address || '',
         district: godownData.district || '',
-        pin_code: godownData.pin_code || '', // Using API field name
-        godown_no: godownData.godown_no || '', // Using API field name
+        pin: godownData.pin || '',
+        godown_no: godownData.godown_no || '',
         latitude: godownData.latitude || '',
         longitude: godownData.longitude || ''
       });
@@ -382,12 +374,12 @@ const JsfcGodown = () => {
     setIsEditing(false);
     setEditingId(null);
     setFormData({
-      name: '',
+      godown_name: '',
       contact: '',
       address: '',
       district: '',
-      pin_code: '', // Using API field name
-      godown_no: '', // Using API field name
+      pin: '',
+      godown_no: '',
       latitude: '',
       longitude: ''
     });
@@ -443,14 +435,14 @@ const JsfcGodown = () => {
         // Process imported data - using API field names
         const importedGodowns = jsonData.map((row, index) => {
           return {
-            name: row.name || '',
+            godown_name: row.godown_name || row.name || '',
             contact: row.contact || '',
             address: row.address || '',
             district: row.district || '',
-            pin_code: row.pin_code || row.pincode || '', // Handle both field names
-            godown_no: row.godown_no || row.godownNumber || '', // Handle both field names
-            latitude: row.latitude || '',
-            longitude: row.longitude || ''
+            pin: row.pin || row.pincode || row.pin_code || '',
+            godown_no: row.godown_no || row.godownNumber || '',
+            latitude: parseFloat(row.latitude) || 0,
+            longitude: parseFloat(row.longitude) || 0
           };
         });
         
@@ -500,12 +492,12 @@ const JsfcGodown = () => {
     
     // Prepare data for export - using API field names
     const exportData = godownsToExport.map(godown => ({
-      Name: godown.name,
+      Name: godown.godown_name,
       Contact: godown.contact,
       Address: godown.address,
       District: godown.district,
-      Pincode: godown.pin_code, // Using API field name
-      'Godown Number': godown.godown_no, // Using API field name
+      Pincode: godown.pin,
+      'Godown Number': godown.godown_no,
       Latitude: godown.latitude,
       Longitude: godown.longitude
     }));
@@ -537,20 +529,20 @@ const JsfcGodown = () => {
     
     // Prepare table data - using API field names
     const tableData = godownsToExport.map(godown => [
-      godown.name,
+      godown.godown_name,
       godown.contact,
       godown.district,
-      godown.pin_code, // Using API field name
-      godown.godown_no, // Using API field name
+      godown.pin,
+      godown.godown_no,
       `${godown.latitude}, ${godown.longitude}`
     ]);
     
     // Define table columns
     const tableColumns = [
-      { header: 'Name', dataKey: 'name' },
+      { header: 'Name', dataKey: 'godown_name' },
       { header: 'Contact', dataKey: 'contact' },
       { header: 'District', dataKey: 'district' },
-      { header: 'Pincode', dataKey: 'pin_code' },
+      { header: 'Pincode', dataKey: 'pin' },
       { header: 'Godown No.', dataKey: 'godown_no' },
       { header: 'Location', dataKey: 'location' }
     ];
@@ -603,12 +595,12 @@ const JsfcGodown = () => {
               setIsEditing(false);
               setEditingId(null);
               setFormData({
-                name: '',
+                godown_name: '',
                 contact: '',
                 address: '',
                 district: '',
-                pin_code: '', // Using API field name
-                godown_no: '', // Using API field name
+                pin: '',
+                godown_no: '',
                 latitude: '',
                 longitude: ''
               });
@@ -672,8 +664,8 @@ const JsfcGodown = () => {
                 <label>Name</label>
                 <input
                   type="text"
-                  name="name"
-                  value={formData.name}
+                  name="godown_name"
+                  value={formData.godown_name}
                   onChange={handleInputChange}
                   placeholder="Enter name"
                   required
@@ -708,8 +700,8 @@ const JsfcGodown = () => {
                 <label>Pincode</label>
                 <input
                   type="text"
-                  name="pin_code" // Using API field name
-                  value={formData.pin_code}
+                  name="pin"
+                  value={formData.pin}
                   onChange={handleInputChange}
                   placeholder="Enter pincode"
                   pattern="[0-9]{6}"
@@ -722,7 +714,7 @@ const JsfcGodown = () => {
                 <label>Godown Number</label>
                 <input
                   type="text"
-                  name="godown_no" // Using API field name
+                  name="godown_no"
                   value={formData.godown_no}
                   onChange={handleInputChange}
                   placeholder="Enter godown number"
@@ -814,8 +806,8 @@ const JsfcGodown = () => {
             <table className="godown-table">
               <thead>
                 <tr>
-                  <th onClick={() => requestSort('name')}>
-                    Name {getSortIndicator('name')}
+                  <th onClick={() => requestSort('godown_name')}>
+                    Name {getSortIndicator('godown_name')}
                   </th>
                   <th onClick={() => requestSort('contact')}>
                     Contact {getSortIndicator('contact')}
@@ -823,8 +815,8 @@ const JsfcGodown = () => {
                   <th onClick={() => requestSort('district')}>
                     District {getSortIndicator('district')}
                   </th>
-                  <th onClick={() => requestSort('pin_code')}>
-                    Pincode {getSortIndicator('pin_code')}
+                  <th onClick={() => requestSort('pin')}>
+                    Pincode {getSortIndicator('pin')}
                   </th>
                   <th>Location</th>
                   <th>Actions</th>
@@ -838,10 +830,10 @@ const JsfcGodown = () => {
                         className={`godown-row ${expandedRows[godown.id] ? 'expanded' : ''}`}
                         onClick={() => toggleRowExpansion(godown.id)}
                       >
-                        <td>{godown.name}</td>
+                        <td>{godown.godown_name}</td>
                         <td>{godown.contact}</td>
                         <td>{godown.district}</td>
-                        <td>{godown.pin_code}</td> {/* Using API field name */}
+                        <td>{godown.pin}</td>
                         <td>
                           <div className="location-info">
                             <FiMapPin className="location-icon" />
@@ -871,7 +863,7 @@ const JsfcGodown = () => {
                             <div className="expanded-content">
                               <div className="detail-row">
                                 <div className="detail-label">Godown Number:</div>
-                                <div className="detail-value">{godown.godown_no}</div> {/* Using API field name */}
+                                <div className="detail-value">{godown.godown_no}</div>
                               </div>
                               <div className="detail-row">
                                 <div className="detail-label">Address:</div>
