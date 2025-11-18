@@ -19,8 +19,8 @@ L.Icon.Default.mergeOptions({
 });
 
 // API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://3.109.186.142:3000';
-const GOOGLE_MAPS_API_KEY = process.env.MAP_API_KEY || 'AIzaSyB7GMusWIecrMygztw8BEGbc4zKhBru8N8';
+const API_BASE_URL = process.env.REACT_APP_API_URL
+const GOOGLE_MAPS_API_KEY = process.env.MAP_API_KEY
 
 console.log('🌐 MapView using API:', API_BASE_URL);
 console.log('🗺️ Using Google Maps API Key:', GOOGLE_MAPS_API_KEY);
