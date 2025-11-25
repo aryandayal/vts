@@ -1,4 +1,5 @@
-.tracking-history-container {
+/* TrackingHistory.module.css */
+.container {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -6,21 +7,21 @@
   color: #333;
 }
 
-.report-title {
+.reportTitle {
   font-size: 18px;
   font-weight: bold;
 }
 
-.date-range {
+.dateRange {
   display: flex;
   gap: 15px;
 }
 
-.date-range span {
+.dateRange span {
   font-size: 14px;
 }
 
-.main-content {
+.mainContent {
   display: flex;
   flex: 1;
   overflow: hidden;
@@ -28,7 +29,7 @@
 
 .sidebar {
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
   border-right: 1px solid #ddd;
   background-color: #f8f9fa;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
@@ -37,7 +38,6 @@
   flex-direction: column;
   position: relative;
   padding: 20px;
-  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #888 #f1f1f1;
 }
@@ -60,27 +60,28 @@
   background-color: #555;
 }
 
-.filter-section {
+.filterSection {
   margin-bottom: 20px;
 }
 
-.filter-section h3 {
+.filterSection h3 {
   margin-bottom: 10px;
   font-size: 16px;
   color: #444;
 }
 
-.filter-select,
-.filter-section input[type="datetime-local"] {
+.filterSelect,
+.filterSection input[type="datetime-local"] {
   width: 100%;
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: white;
   margin-bottom: 10px;
+  box-sizing: border-box;
 }
 
-.view-button {
+.viewButton {
   width: 100%;
   padding: 10px;
   background-color: #007bff;
@@ -92,38 +93,38 @@
   transition: background-color 0.2s;
 }
 
-.view-button:hover {
+.viewButton:hover {
   background-color: #0069d9;
 }
 
-.speed-control {
+.speedControl {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.speed-control input[type="range"] {
+.speedControl input[type="range"] {
   flex: 1;
 }
 
-.checkbox-label {
+.checkboxLabel {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkboxLabel input[type="checkbox"] {
   margin: 0;
 }
 
-.loading, .error, .no-data {
+.loading, .error, .noData {
   text-align: center;
   padding: 20px;
   color: #666;
 }
 
-.error button, .no-data button {
+.error button, .noData button {
   margin-top: 10px;
   padding: 8px 16px;
   background-color: #007bff;
@@ -133,17 +134,17 @@
   cursor: pointer;
 }
 
-.error button:hover, .no-data button:hover {
+.error button:hover, .noData button:hover {
   background-color: #0069d9;
 }
 
-.map-container {
+.mapContainer {
   flex: 1;
   position: relative;
   overflow: hidden;
 }
 
-.map-mode-btn {
+.mapModeBtn {
   position: absolute;
   top: 15px;
   right: 15px;
@@ -159,12 +160,12 @@
   transition: all 0.2s;
 }
 
-.map-mode-btn:hover {
+.mapModeBtn:hover {
   background-color: #fff;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.playback-controls {
+.playbackControls {
   position: absolute;
   bottom: 20px;
   left: 50%;
@@ -180,13 +181,13 @@
   min-width: 300px;
 }
 
-.playback-controls > div:first-child {
+.playbackControls > div:first-child {
   display: flex;
   gap: 10px;
   justify-content: center;
 }
 
-.playback-controls button {
+.playbackControls button {
   padding: 8px 16px;
   background-color: #007bff;
   color: white;
@@ -197,15 +198,15 @@
   transition: background-color 0.2s;
 }
 
-.playback-controls button:hover {
+.playbackControls button:hover {
   background-color: #0069d9;
 }
 
-.progress-container {
+.progressContainer {
   width: 100%;
 }
 
-.progress-bar {
+.progressBar {
   width: 100%;
   height: 6px;
   background-color: rgba(0, 0, 0, 0.1);
@@ -214,62 +215,64 @@
   margin-bottom: 5px;
 }
 
-.progress-fill {
+.progressFill {
   height: 100%;
   background: linear-gradient(90deg, #007bff, #0056b3);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
-.progress-text {
+.progressText {
   font-size: 12px;
   color: #666;
   text-align: center;
   font-weight: 500;
 }
 
-.popup-content {
+.popupContent {
   font-family: Arial, sans-serif;
   max-width: 250px;
 }
 
-.popup-content h3 {
+.popupContent h3 {
   margin-top: 0;
   color: #2c3e50;
   border-bottom: 1px solid #eee;
   padding-bottom: 5px;
 }
 
-.popup-content p {
+.popupContent p {
   margin: 5px 0;
   font-size: 14px;
 }
 
-.status-bar {
+.statusBar {
   display: flex;
   justify-content: space-between;
   padding: 10px 20px;
   background-color: #f8f9fa;
   border-top: 1px solid #ddd;
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
-.status-item {
+.statusItem {
   display: flex;
   align-items: center;
+  margin: 5px 0;
 }
 
-.status-label {
+.statusLabel {
   margin-right: 8px;
   font-weight: bold;
 }
 
-.status-active {
+.statusActive {
   color: #28a745;
   font-weight: bold;
 }
 
-.resizable-divider {
+.resizableDivider {
   width: 4px;
   height: 100%;
   background-color: #f8f9fa;
@@ -283,21 +286,21 @@
   flex-shrink: 0;
 }
 
-.resizable-divider:hover {
+.resizableDivider:hover {
   background-color: #e9ecef;
 }
 
-.resizable-divider.dragging {
+.resizableDivider.dragging {
   background-color: #dee2e6;
 }
 
-.divider-line {
+.dividerLine {
   width: 1px;
   height: 100%;
   background-color: #ced4da;
 }
 
-.resizable-divider:hover::after {
+.resizableDivider:hover::after {
   content: '';
   position: absolute;
   width: 2px;
@@ -307,86 +310,159 @@
   opacity: 0.5;
 }
 
-.resizable-divider.dragging::after {
+.resizableDivider.dragging::after {
   background-color: #495057;
   opacity: 0.8;
 }
 
-.history-path {
+.historyPath {
   stroke-linecap: round;
   stroke-linejoin: round;
   animation: pathGlow 2s ease-in-out infinite alternate;
   will-change: transform, opacity;
 }
 
-@keyframes pathGlow {
-  from {
-    filter: drop-shadow(0 0 2px rgba(255, 0, 0, 0.3));
-  }
-  to {
-    filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.5));
+/* Global keyframes */
+:global {
+  @keyframes pathGlow {
+    from {
+      filter: drop-shadow(0 0 2px rgba(255, 0, 0, 0.3));
+    }
+    to {
+      filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.5));
+    }
   }
 }
 
+/* Tablet Styles */
+@media (max-width: 1024px) {
+  .sidebar {
+    padding: 15px;
+  }
+  
+  .filterSection h3 {
+    font-size: 15px;
+  }
+  
+  .playbackControls {
+    min-width: 250px;
+    padding: 12px;
+  }
+  
+  .statusBar {
+    font-size: 13px;
+  }
+}
+
+/* Mobile Styles */
 @media (max-width: 768px) {
-  .resizable-divider {
+  .resizableDivider {
     display: none;
   }
-  .main-content {
+  
+  .mainContent {
     flex-direction: column;
   }
+  
   .sidebar {
     width: 100% !important;
     height: 40%;
     border-right: none;
     border-bottom: 1px solid #ddd;
+    padding: 15px;
   }
-  .map-container {
+  
+  .mapContainer {
     width: 100% !important;
     height: 60%;
   }
-  .playback-controls {
+  
+  .playbackControls {
     bottom: 10px;
     left: 10px;
     right: 10px;
     transform: none;
     min-width: auto;
+    padding: 10px;
   }
-  .map-mode-btn {
+  
+  .mapModeBtn {
     top: 10px;
     right: 10px;
     padding: 8px 12px;
     font-size: 12px;
   }
-  .status-bar {
-    flex-wrap: wrap;
-    gap: 5px;
+  
+  .statusBar {
+    padding: 8px 15px;
   }
-  .status-item {
-    flex: 1 1 40%;
-    min-width: 120px;
+  
+  .statusItem {
+    flex: 1 1 45%;
+    min-width: 140px;
   }
 }
 
+/* Small Mobile Styles */
 @media (max-width: 480px) {
   .header {
     flex-direction: column;
     gap: 10px;
     text-align: center;
   }
-  .date-range {
+  
+  .dateRange {
     flex-direction: column;
     gap: 5px;
   }
-  .playback-controls {
-    padding: 10px;
+  
+  .sidebar {
+    height: 45%;
   }
-  .playback-controls > div:first-child {
+  
+  .mapContainer {
+    height: 55%;
+  }
+  
+  .playbackControls {
+    padding: 8px;
+  }
+  
+  .playbackControls > div:first-child {
     flex-direction: column;
     gap: 5px;
   }
-  .status-item {
+  
+  .playbackControls button {
+    width: 100%;
+  }
+  
+  .statusBar {
+    font-size: 12px;
+  }
+  
+  .statusItem {
     flex: 1 1 100%;
     min-width: auto;
+  }
+  
+  .filterSection {
+    margin-bottom: 15px;
+  }
+  
+  .filterSection h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  
+  .filterSelect,
+  .filterSection input[type="datetime-local"] {
+    padding: 6px;
+    font-size: 14px;
+  }
+  
+  .viewButton {
+    padding: 8px;
+    font-size: 14px;
   }
 }

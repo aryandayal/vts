@@ -1,24 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from "react-helmet";
 import { FaUser, FaLock, FaKey, FaSave, FaTimes, FaCheckCircle, FaSearch } from "react-icons/fa";
-import Header from "../../components/Header";
-import BottomNavbar from "../../components/BottomNavbar";
-import { useUser } from '../../components/UserContext';
-import Cookies from 'js-cookie';
-import './changeuserpassword.css';
+import { useAuthStore } from '../../stores/authStore';
+import { useForm } from 'react-hook-form';
+import styles from './changeuserpassword.module.css';
 
 const ChangeUserPassword = () => {
-  // Get user and token from context
-  const { user, token: contextToken } = useUser();
+  // Get user and token from Zustand store
+  const { user, accessToken: token } = useAuthStore();
   
-  // State hooks for form fields
-  const [userType, setUserType] = useState('');
-  const [username, setUsername] = useState('');
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // State hooks for UI elements
   const [isLoading, setIsLoading] = useState(false);
-  const [formErrors, setFormErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   
   // State for user search
@@ -49,6 +41,19 @@ const ChangeUserPassword = () => {
     { id: 8, name: 'Fiona Garcia', email: 'fiona@example.com', type: 'Operator' }
   ];
 
+  // Initialize React Hook Form
+  const { register, handleSubmit, formState: { errors }, watch, reset, setValue } = useForm({
+    defaultValues: {
+      userType: '',
+      oldPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+  });
+
+  // Watch the userType field for filtering users
+  const userTypeValue = watch('userType');
+
   // Filter users based on search term and user type
   useEffect(() => {
     if (userSearchTerm.trim() === '') {
@@ -59,36 +64,19 @@ const ChangeUserPassword = () => {
     const filteredUsers = mockUsers.filter(user => {
       const matchesSearch = user.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                            user.email.toLowerCase().includes(userSearchTerm.toLowerCase());
-      const matchesType = !userType || user.type === userType;
+      const matchesType = !userTypeValue || user.type === userTypeValue;
       return matchesSearch && matchesType;
     });
 
     setUserSearchResults(filteredUsers);
     setShowUserDropdown(true);
-  }, [userSearchTerm, userType]);
+  }, [userSearchTerm, userTypeValue]);
 
   // Handle user selection
   const handleUserSelect = (user) => {
     setSelectedUser(user);
-    setUsername(user.name);
     setUserSearchTerm(user.name);
     setShowUserDropdown(false);
-  };
-
-  // Get token from context or cookies
-  const getToken = () => {
-    // First try to get token from context
-    if (contextToken) {
-      return contextToken;
-    }
-    
-    // If not in context, try to get from cookies
-    const tokenFromCookie = Cookies.get('token') || Cookies.get('accessToken');
-    if (tokenFromCookie) {
-      return tokenFromCookie;
-    }
-    
-    return null;
   };
 
   // Helper function to get user ID from token or user object
@@ -99,7 +87,6 @@ const ChangeUserPassword = () => {
     }
     
     // If not available, try to decode the token
-    const token = getToken();
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -112,33 +99,12 @@ const ChangeUserPassword = () => {
     return null;
   };
 
-  // Validate form
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!userType) errors.userType = 'Please select a user type';
-    if (!selectedUser) errors.username = 'Please select a user';
-    if (!oldPassword) errors.oldPassword = 'Old password is required';
-    if (!newPassword) errors.newPassword = 'New password is required';
-    if (newPassword.length < 6) errors.newPassword = 'Password must be at least 6 characters';
-    if (newPassword !== confirmPassword) errors.confirmPassword = 'Passwords do not match';
-    
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
   // Handle form submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
+  const onSubmit = async (data) => {
     setIsLoading(true);
-    setFormErrors({});
     
     try {
-      // Get token and user ID
-      const token = getToken();
+      // Get user ID
       const userId = getUserId();
       
       if (!token) {
@@ -157,15 +123,15 @@ const ChangeUserPassword = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          oldPassword: oldPassword,
-          newPassword: newPassword
+          oldPassword: data.oldPassword,
+          newPassword: data.newPassword
         })
       });
       
-      const data = await response.json();
+      const responseData = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to change password');
+        throw new Error(responseData.message || 'Failed to change password');
       }
       
       // Success
@@ -173,18 +139,15 @@ const ChangeUserPassword = () => {
       
       // Reset form after successful submission
       setTimeout(() => {
-        setUserType('');
-        setUsername('');
+        reset();
         setUserSearchTerm('');
         setSelectedUser(null);
-        setOldPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
         setSuccessMessage('');
       }, 2000);
       
     } catch (error) {
-      setFormErrors({ submit: error.message || 'Failed to change password. Please try again.' });
+      // Set form error for submit
+      setValue('submit', error.message || 'Failed to change password. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -192,15 +155,9 @@ const ChangeUserPassword = () => {
 
   // Reset form
   const handleReset = () => {
-    setUserType('');
-    setUsername('');
+    reset();
     setUserSearchTerm('');
     setSelectedUser(null);
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setFormErrors({});
-    setSuccessMessage('');
     setShowUserDropdown(false);
   };
 
@@ -209,40 +166,39 @@ const ChangeUserPassword = () => {
       <Helmet>
         <title>Change User Password</title>
       </Helmet>
-      <Header />
-      <BottomNavbar text="Change User Password" />
       
-      <div className="password-change-container">
-        <div className="password-change-card">
-          <div className="card-header">
+      <div className={styles.passwordChangeContainer}>
+        <div className={styles.passwordChangeCard}>
+          <div className={styles.cardHeader}>
             <h2>Change User Password</h2>
             <p>Update password for any user in the system</p>
           </div>
           
           {successMessage && (
-            <div className="success-message">
+            <div className={styles.successMessage}>
               <FaCheckCircle /> {successMessage}
             </div>
           )}
           
-          {formErrors.submit && (
-            <div className="error-message">
-              {formErrors.submit}
+          {errors.submit && (
+            <div className={styles.errorMessage}>
+              {errors.submit.message}
             </div>
           )}
           
-          <form onSubmit={handleSubmit} className="password-form">
-            <div className="form-grid">
+          <form onSubmit={handleSubmit(onSubmit)} className={styles.passwordForm}>
+            <div className={styles.formGrid}>
               {/* User Type Field */}
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label htmlFor="userType">
-                  <FaUser className="input-icon" /> User Type
+                  <FaUser className={styles.inputIcon} /> User Type
                 </label>
                 <select
                   id="userType"
-                  value={userType}
-                  onChange={(e) => setUserType(e.target.value)}
-                  className={formErrors.userType ? 'error' : ''}
+                  {...register('userType', { 
+                    required: 'Please select a user type' 
+                  })}
+                  className={errors.userType ? 'error' : ''}
                 >
                   {userTypes.map((type) => (
                     <option key={type.value} value={type.value}>
@@ -250,111 +206,120 @@ const ChangeUserPassword = () => {
                     </option>
                   ))}
                 </select>
-                {formErrors.userType && (
-                  <span className="error-text">{formErrors.userType}</span>
+                {errors.userType && (
+                  <span className={styles.errorText}>{errors.userType.message}</span>
                 )}
               </div>
               
               {/* Username Search Field */}
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label htmlFor="username">
-                  <FaSearch className="input-icon" /> Search User
+                  <FaSearch className={styles.inputIcon} /> Search User
                 </label>
-                <div className="search-container">
+                <div className={styles.searchContainer}>
                   <input
                     type="text"
                     id="username"
                     value={userSearchTerm}
                     onChange={(e) => setUserSearchTerm(e.target.value)}
                     placeholder="Search by name or email"
-                    className={formErrors.username ? 'error' : ''}
+                    className={errors.username ? 'error' : ''}
                     onFocus={() => setShowUserDropdown(true)}
                   />
                   {showUserDropdown && userSearchResults.length > 0 && (
-                    <div className="search-dropdown">
+                    <div className={styles.searchDropdown}>
                       {userSearchResults.map((user) => (
                         <div 
                           key={user.id} 
-                          className="search-result-item"
+                          className={styles.searchResultItem}
                           onClick={() => handleUserSelect(user)}
                         >
-                          <div className="user-name">{user.name}</div>
-                          <div className="user-email">{user.email}</div>
+                          <div className={styles.userName}>{user.name}</div>
+                          <div className={styles.userEmail}>{user.email}</div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-                {formErrors.username && (
-                  <span className="error-text">{formErrors.username}</span>
+                {errors.username && (
+                  <span className={styles.errorText}>{errors.username.message}</span>
                 )}
               </div>
               
               {/* Old Password Field */}
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label htmlFor="oldPassword">
-                  <FaLock className="input-icon" /> Old Password
+                  <FaLock className={styles.inputIcon} /> Old Password
                 </label>
                 <input
                   type="password"
                   id="oldPassword"
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
+                  {...register('oldPassword', { 
+                    required: 'Old password is required' 
+                  })}
                   placeholder="Enter current password"
-                  className={formErrors.oldPassword ? 'error' : ''}
+                  className={errors.oldPassword ? 'error' : ''}
                 />
-                {formErrors.oldPassword && (
-                  <span className="error-text">{formErrors.oldPassword}</span>
+                {errors.oldPassword && (
+                  <span className={styles.errorText}>{errors.oldPassword.message}</span>
                 )}
               </div>
               
               {/* New Password Field */}
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label htmlFor="newPassword">
-                  <FaKey className="input-icon" /> New Password
+                  <FaKey className={styles.inputIcon} /> New Password
                 </label>
                 <input
                   type="password"
                   id="newPassword"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  {...register('newPassword', { 
+                    required: 'New password is required',
+                    minLength: {
+                      value: 6,
+                      message: 'Password must be at least 6 characters'
+                    }
+                  })}
                   placeholder="Enter new password"
-                  className={formErrors.newPassword ? 'error' : ''}
+                  className={errors.newPassword ? 'error' : ''}
                 />
-                {formErrors.newPassword && (
-                  <span className="error-text">{formErrors.newPassword}</span>
+                {errors.newPassword && (
+                  <span className={styles.errorText}>{errors.newPassword.message}</span>
                 )}
               </div>
               
               {/* Confirm Password Field */}
-              <div className="form-group full-width">
+              <div className={`${styles.formGroup} ${styles.formGroupFullWidth}`}>
                 <label htmlFor="confirmPassword">
-                  <FaKey className="input-icon" /> Confirm Password
+                  <FaKey className={styles.inputIcon} /> Confirm Password
                 </label>
                 <input
                   type="password"
                   id="confirmPassword"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  {...register('confirmPassword', { 
+                    required: 'Please confirm your password',
+                    validate: value => 
+                      value === watch('newPassword') || 'Passwords do not match'
+                  })}
                   placeholder="Confirm new password"
-                  className={formErrors.confirmPassword ? 'error' : ''}
+                  className={errors.confirmPassword ? 'error' : ''}
                 />
-                {formErrors.confirmPassword && (
-                  <span className="error-text">{formErrors.confirmPassword}</span>
+                {errors.confirmPassword && (
+                  <span className={styles.errorText}>{errors.confirmPassword.message}</span>
                 )}
               </div>
             </div>
             
             {/* Action Buttons */}
-            <div className="form-actions">
+            <div className={styles.formActions}>
               <button 
                 type="submit" 
-                className="submit-btn"
+                className={styles.submitBtn}
                 disabled={isLoading}
               >
                 {isLoading ? (
                   <>
-                    <span className="spinner"></span> Processing...
+                    <span className={styles.spinner}></span> Processing...
                   </>
                 ) : (
                   <>
@@ -365,7 +330,7 @@ const ChangeUserPassword = () => {
               
               <button 
                 type="button" 
-                className="reset-btn"
+                className={styles.resetBtn}
                 onClick={handleReset}
               >
                 <FaTimes /> Reset

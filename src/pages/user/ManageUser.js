@@ -1,21 +1,13 @@
+// pages/user/ManageUser.js
 import React, { useState, useEffect } from 'react';
 import { Helmet } from "react-helmet";
-import Header from '../../components/Header';
-import BottomNavbar from '../../components/BottomNavbar';
-import Cookies from 'js-cookie';
-import './manageuser.css';
+import { useForm } from 'react-hook-form';
+import { useAuthStore } from '../../stores/authStore';
+import { userAPI } from '../../utils/api';
+import api from '../../utils/api'; // Import the default api instance
+import styles from './manageuser.module.css';
 
 const ManageUser = () => {
-  // Form state - matches the request format exactly
-  const [formData, setFormData] = useState({
-    user_id: '',
-    full_name: '',
-    email: '',
-    phone: '',
-    password: '',
-    role: 'Operator' // Default role
-  });
-
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
@@ -29,19 +21,17 @@ const ManageUser = () => {
   // Table data state
   const [users, setUsers] = useState([]);
   
-  // User permission state
-  const [userRole, setUserRole] = useState('');
-  const [hasPermission, setHasPermission] = useState(false);
-  const [tokenPayload, setTokenPayload] = useState(null);
+  // Get auth state and functions from Zustand store
+  const { user, isAuthenticated, hasRole } = useAuthStore();
 
   // Role options
   const roleOptions = [
-    'Super Admin',
-    'Head Quarter Admin',
-    'Manager',
-    'Operator',
-    'Transporter',
-    'Driver'
+    'SUPER_ADMIN',
+    'HEAD_QUARTER_ADMIN',
+    'MANAGER',
+    'OPERATOR',
+    'TRANSPORTER',
+    'DRIVER'
   ];
 
   // Role mapping between API format and display format
@@ -54,58 +44,24 @@ const ManageUser = () => {
     'DRIVER': 'Driver'
   };
 
-  const roleApiMap = {
-    'Super Admin': 'SUPER_ADMIN',
-    'Head Quarter Admin': 'HEAD_QUARTER_ADMIN',
-    'Manager': 'MANAGER',
-    'Operator': 'OPERATOR',
-    'Transporter': 'TRANSPORTER',
-    'Driver': 'DRIVER'
-  };
-
-  // API base URL
-  const API_BASE_URL = 'http://3.109.186.142:3005';
-
   // Check user permissions
-  const checkUserPermissions = () => {
-    const token = Cookies.get('token');
-    if (!token) {
-      setError('Authentication token not found. Please login again.');
-      return false;
-    }
+  const hasPermission = hasRole('SUPER_ADMIN');
 
-    try {
-      // Decode JWT token to get user role
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setTokenPayload(payload); // Store for debugging
-      console.log('Token payload:', payload);
-      
-      const userRole = payload.role || '';
-      console.log('User role from token:', userRole);
-      setUserRole(roleDisplayMap[userRole] || userRole);
-      
-      // Check if user has permission to manage users
-      // Only Super Admin can add users
-      const hasPermission = userRole === 'SUPER_ADMIN';
-      console.log('Has permission:', hasPermission);
-      setHasPermission(hasPermission);
-      
-      if (!hasPermission) {
-        setError('You do not have permission to manage users. Only Super Admin can access this page.');
-      }
-      
-      return hasPermission;
-    } catch (err) {
-      console.error('Error decoding token:', err);
-      setError('Failed to verify user permissions. Please login again.');
-      return false;
+  // Initialize React Hook Form
+  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm({
+    defaultValues: {
+      user_id: '',
+      full_name: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'OPERATOR' // Default role in API format
     }
-  };
+  });
 
-  // Fetch users from database using GET /api/users (for table display)
+  // Fetch users from database
   const fetchUsers = async () => {
-    // Check permissions first
-    if (!checkUserPermissions()) {
+    if (!hasPermission) {
       setIsFetching(false);
       return;
     }
@@ -114,28 +70,9 @@ const ManageUser = () => {
     setError('');
     
     try {
-      const token = Cookies.get('token');
-      
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
+      const response = await userAPI.getUsers();
+      const data = response.data;
 
-      const response = await fetch(`${API_BASE_URL}/api/users`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-      console.log('Fetch users response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to fetch users');
-      }
-
-      // Check if response has data.users array
       if (!data.data || !data.data.users || !Array.isArray(data.data.users)) {
         throw new Error('Invalid response format: users array missing');
       }
@@ -148,24 +85,23 @@ const ManageUser = () => {
         email: user.email,
         phone: user.phone || 'Not provided',
         role: roleDisplayMap[user.role] || user.role, // Convert API role to display format
-        status: user.is_disabled ? 'INACTIVE' : 'ACTIVE', // Updated to use is_disabled
+        status: user.is_active ? 'ACTIVE' : 'INACTIVE', // Updated to use is_active
+        isEmailVerified: user.is_email_verified, // Add email verification status
         lastLogin: user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never',
         createdAt: user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'
       }));
 
       setUsers(transformedUsers);
-      console.log('Users fetched successfully:', transformedUsers);
     } catch (err) {
       console.error('Error fetching users:', err);
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'Failed to fetch users');
     } finally {
       setIsFetching(false);
     }
   };
 
-  // Fetch single user for editing using GET /api/users/:userId
+  // Fetch single user for editing
   const fetchUserForEdit = async (id) => {
-    // Check permissions first
     if (!hasPermission) {
       setError('You do not have permission to edit users.');
       return;
@@ -175,36 +111,16 @@ const ManageUser = () => {
     setError('');
     
     try {
-      const token = Cookies.get('token');
-      
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
+      const response = await userAPI.getUserById(id);
+      const data = response.data;
 
-      const response = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-      console.log('Fetch user for edit response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to fetch user');
-      }
-
-      // Populate form with user data
-      setFormData({
-        user_id: data.data.user_id,
-        full_name: data.data.full_name,
-        email: data.data.email,
-        phone: data.data.phone || '',
-        password: '', // Don't populate password for security
-        role: roleDisplayMap[data.data.role] || data.data.role // Convert API role to display format
-      });
+      // Populate form with user data using React Hook Form's setValue
+      setValue('user_id', data.data.user_id);
+      setValue('full_name', data.data.full_name);
+      setValue('email', data.data.email);
+      setValue('phone', data.data.phone || '');
+      setValue('password', ''); // Don't populate password for security
+      setValue('role', data.data.role); // Use API role format directly
       
       setIsEditing(true);
       setEditingUserId(id);
@@ -212,7 +128,7 @@ const ManageUser = () => {
       // Scroll to form
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'Failed to fetch user');
     } finally {
       setIsLoading(false);
     }
@@ -220,23 +136,16 @@ const ManageUser = () => {
 
   // Fetch users when component mounts
   useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  // Handle form input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
-  };
+    if (isAuthenticated) {
+      fetchUsers();
+    } else {
+      setIsFetching(false);
+      setError('Authentication required. Please login.');
+    }
+  }, [isAuthenticated]);
 
   // Handle form submission - for both create and update
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Check permissions first
+  const onSubmit = async (data) => {
     if (!hasPermission) {
       setError('You do not have permission to add or update users.');
       return;
@@ -247,72 +156,38 @@ const ManageUser = () => {
     setSuccess('');
 
     try {
-      const token = Cookies.get('token');
-      
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      // Prepare API request data - matches the provided request format exactly
+      // Prepare API request data - use the exact format expected by the API
       const apiData = {
-        user_id: formData.user_id,
-        full_name: formData.full_name,
-        email: formData.email,
-        phone: formData.phone,
-        password: formData.password, // Always include password for create
-        role: roleApiMap[formData.role] || formData.role // Convert display role to API format
+        user_id: data.user_id,
+        full_name: data.full_name,
+        email: data.email,
+        phone: data.phone,
+        password: data.password,
+        role: data.role // Use the role value directly from the form (already in API format)
       };
 
-      console.log('Sending API request:', apiData);
-      console.log('Current user role:', userRole);
-      console.log('Token payload:', tokenPayload);
+      // For editing, don't send password if it's empty
+      if (isEditing && !data.password) {
+        delete apiData.password;
+      }
 
       let response;
-      let url;
-      let method;
-
+      
       if (isEditing) {
-        // Update existing user using PUT /api/users/:userId
-        url = `${API_BASE_URL}/api/users/${editingUserId}`;
-        method = 'PUT';
+        // Update existing user
+        response = await userAPI.updateUser(editingUserId, apiData);
       } else {
-        // Create new user using POST /api/user/create
-        url = `${API_BASE_URL}/api/users/create`;
-        method = 'POST';
+        // Create new user using the correct endpoint
+        response = await api.post('/users/create', apiData);
       }
 
-      console.log('Request URL:', url);
-      console.log('Request method:', method);
-
-      response = await fetch(url, {
-        method: method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(apiData)
-      });
-
-      const data = await response.json();
-      console.log('API response:', data);
-
-      if (!response.ok) {
-        // Handle specific permission error
-        if (data.error && data.error.includes('Only Super Admin')) {
-          throw new Error('Permission denied: Only Super Admin can register users. Your current role is: ' + userRole);
-        }
-        throw new Error(data.message || data.error || `Failed to ${isEditing ? 'update' : 'create'} user`);
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Request failed with status code ${response.status}`);
       }
 
-      // Reset form
-      setFormData({
-        user_id: '',
-        full_name: '',
-        email: '',
-        phone: '',
-        password: '',
-        role: 'Operator'
-      });
+      // Reset form using React Hook Form's reset
+      reset();
       
       setIsEditing(false);
       setEditingUserId(null);
@@ -322,8 +197,32 @@ const ManageUser = () => {
       // Refresh the user list to get the latest data
       await fetchUsers();
     } catch (err) {
-      console.error('Error in handleSubmit:', err);
-      setError(err.message);
+      console.error('Error in onSubmit:', err);
+      
+      // More detailed error message
+      let errorMessage = `Failed to ${isEditing ? 'update' : 'create'} user`;
+      if (err.response) {
+        errorMessage += `: ${err.response.status} ${err.response.statusText}`;
+        if (err.response.data && err.response.data.message) {
+          errorMessage += ` - ${err.response.data.message}`;
+        }
+        
+        // Special handling for 400 Bad Request
+        if (err.response.status === 400) {
+          errorMessage += '. Please check all required fields and try again.';
+          
+          // Log validation errors if available
+          if (err.response.data && err.response.data.errors) {
+            console.error('Validation errors:', err.response.data.errors);
+            const errorMessages = Object.values(err.response.data.errors).flat().join(', ');
+            errorMessage += ` Details: ${errorMessages}`;
+          }
+        }
+      } else if (err.message) {
+        errorMessage += `: ${err.message}`;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -331,7 +230,6 @@ const ManageUser = () => {
 
   // Handle edit action
   const handleEdit = (id) => {
-    // Check permissions first
     if (!hasPermission) {
       setError('You do not have permission to edit users.');
       return;
@@ -340,9 +238,8 @@ const ManageUser = () => {
     fetchUserForEdit(id);
   };
 
-  // Handle delete action using DELETE /api/users/:userId (soft delete)
+  // Handle delete action
   const handleDelete = async (id) => {
-    // Check permissions first
     if (!hasPermission) {
       setError('You do not have permission to delete users.');
       return;
@@ -356,41 +253,20 @@ const ManageUser = () => {
     setError('');
 
     try {
-      const token = Cookies.get('token');
-      
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-      console.log('Delete user response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to delete user');
-      }
-
+      await userAPI.deleteUser(id);
       setSuccess('User deleted successfully!');
       
       // Refresh the user list to get the latest data
       await fetchUsers();
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'Failed to delete user');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle disable user action using POST /api/users/:userId/disable
+  // Handle disable user action
   const handleDisable = async (id) => {
-    // Check permissions first
     if (!hasPermission) {
       setError('You do not have permission to disable users.');
       return;
@@ -404,49 +280,34 @@ const ManageUser = () => {
 
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
     try {
-      const token = Cookies.get('token');
+      // Call the disable API endpoint
+      const response = await userAPI.disableUser(id, reason);
       
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/users/${id}/disable`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ reason }) // Include the reason in the request body
-      });
-
-      const data = await response.json();
-      console.log('Disable user response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to disable user');
-      }
-
-      // Check if the response matches the expected format
-      if (data.success && data.data && data.data.is_disabled === true) {
+      // Log the response for debugging
+      console.log('Disable user response:', response);
+      
+      // Check if the response was successful (status code 2xx)
+      if (response.status >= 200 && response.status < 300) {
         setSuccess('User disabled successfully!');
+        
+        // Refresh the user list to get the latest data
+        await fetchUsers();
       } else {
-        throw new Error('Unexpected response format from server');
+        throw new Error(`Request failed with status code ${response.status}`);
       }
-      
-      // Refresh the user list to get the latest data
-      await fetchUsers();
     } catch (err) {
-      setError(err.message);
+      console.error('Error disabling user:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to disable user');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle enable user action using POST /api/users/:userId/enable
+  // Handle enable user action
   const handleEnable = async (id) => {
-    // Check permissions first
     if (!hasPermission) {
       setError('You do not have permission to enable users.');
       return;
@@ -458,40 +319,27 @@ const ManageUser = () => {
 
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
     try {
-      const token = Cookies.get('token');
+      // Call the enable API endpoint
+      const response = await userAPI.enableUser(id);
       
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/users/${id}/enable`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-      console.log('Enable user response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to enable user');
-      }
-
-      // Check if the response matches the expected format
-      if (data.success && data.data && data.data.is_disabled === false) {
+      // Log the response for debugging
+      console.log('Enable user response:', response);
+      
+      // Check if the response was successful (status code 2xx)
+      if (response.status >= 200 && response.status < 300) {
         setSuccess('User enabled successfully!');
+        
+        // Refresh the user list to get the latest data
+        await fetchUsers();
       } else {
-        throw new Error('Unexpected response format from server');
+        throw new Error(`Request failed with status code ${response.status}`);
       }
-      
-      // Refresh the user list to get the latest data
-      await fetchUsers();
     } catch (err) {
-      setError(err.message);
+      console.error('Error enabling user:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to enable user');
     } finally {
       setIsLoading(false);
     }
@@ -501,25 +349,17 @@ const ManageUser = () => {
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditingUserId(null);
-    setFormData({
-      user_id: '',
-      full_name: '',
-      email: '',
-      phone: '',
-      password: '',
-      role: 'Operator'
-    });
+    reset(); // Reset form using React Hook Form
   };
 
-  // Handle assign action
-  const handleAssign = (id) => {
-    // Check permissions first
-    if (!hasPermission) {
-      setError('You do not have permission to assign users.');
-      return;
-    }
-    
-    alert(`Assigning home page data to user with ID: ${id}`);
+  // Get status badge class
+  const getStatusBadgeClass = (status) => {
+    return status === 'ACTIVE' ? styles.statusBadgeActive : styles.statusBadgeInactive;
+  };
+
+  // Get email verification badge class
+  const getEmailVerifiedBadgeClass = (isVerified) => {
+    return isVerified ? styles.verifiedBadge : styles.notVerifiedBadge;
   };
 
   return (
@@ -527,121 +367,141 @@ const ManageUser = () => {
       <Helmet>
         <title>ManageUser</title>
       </Helmet>
-      <Header />
-      <BottomNavbar text="Add/Update Users"/>
     
-      <div className="user-management-container">
-        {!hasPermission && (
-          <div className="permission-denied">
-            <h2>Permission Denied</h2>
-            <p>{error || 'You do not have permission to access this page.'}</p>
-            <p>Please contact your administrator if you believe this is an error.</p>
-            {tokenPayload && (
-              <div className="debug-info">
-                <h3>Debug Information:</h3>
-                <p>Your role: {userRole}</p>
-                <p>Required role: Super Admin</p>
-              </div>
-            )}
+      <div className={styles.userManagementContainer}>
+        {!isAuthenticated ? (
+          <div className={styles.permissionDenied}>
+            <h2>Authentication Required</h2>
+            <p>Please login to access this page.</p>
           </div>
-        )}
-        
-        {hasPermission && (
+        ) : !hasPermission ? (
+          <div className={styles.permissionDenied}>
+            <h2>Permission Denied</h2>
+            <p>You do not have permission to manage users. Only Super Admin can access this page.</p>
+            <p>Please contact your administrator if you believe this is an error.</p>
+          </div>
+        ) : (
           <>
-            <div className="left-panel">
-              <div className="form-card">
+            <div className={styles.leftPanel}>
+              <div className={styles.formCard}>
                 <h2>{isEditing ? 'Update User' : 'Add User'}</h2>
                 
                 {/* Error and Success Messages */}
-                {error && <div className="error-message">{error}</div>}
-                {success && <div className="success-message">{success}</div>}
+                {error && <div className={styles.errorMessage}>{error}</div>}
+                {success && <div className={styles.successMessage}>{success}</div>}
                 
-                <form onSubmit={handleSubmit}>
-                  <div className="form-group">
+                <form onSubmit={handleSubmit(onSubmit)}>
+                  <div className={styles.formGroup}>
                     <label htmlFor="user_id">User ID</label>
                     <input 
                       type="text" 
-                      id="user_id" 
+                      id="user_id"
                       name="user_id"
-                      value={formData.user_id}
-                      onChange={handleInputChange}
-                      required
+                      {...register('user_id', { 
+                        required: 'User ID is required',
+                        pattern: {
+                          value: /^[A-Za-z0-9]+$/,
+                          message: 'User ID can only contain letters and numbers'
+                        }
+                      })}
                     />
+                    {errors.user_id && <p className={styles.errorText}>{errors.user_id.message}</p>}
                   </div>
 
-                  <div className="form-group">
+                  <div className={styles.formGroup}>
                     <label htmlFor="full_name">Full Name</label>
                     <input 
                       type="text" 
-                      id="full_name" 
+                      id="full_name"
                       name="full_name"
-                      value={formData.full_name}
-                      onChange={handleInputChange}
-                      required
+                      {...register('full_name', { 
+                        required: 'Full name is required',
+                        minLength: {
+                          value: 2,
+                          message: 'Full name must be at least 2 characters'
+                        }
+                      })}
                     />
+                    {errors.full_name && <p className={styles.errorText}>{errors.full_name.message}</p>}
                   </div>
 
-                  <div className="form-group">
+                  <div className={styles.formGroup}>
                     <label htmlFor="email">Email</label>
                     <input 
                       type="email" 
-                      id="email" 
+                      id="email"
                       name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      required
+                      {...register('email', { 
+                        required: 'Email is required',
+                        pattern: {
+                          value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                          message: 'Invalid email address'
+                        }
+                      })}
                     />
+                    {errors.email && <p className={styles.errorText}>{errors.email.message}</p>}
                   </div>
 
-                  <div className="form-group">
+                  <div className={styles.formGroup}>
                     <label htmlFor="phone">Phone Number</label>
                     <input 
                       type="tel" 
-                      id="phone" 
+                      id="phone"
                       name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      placeholder="+1-555-1234"
-                      required
+                      {...register('phone', { 
+                        required: 'Phone number is required',
+                        pattern: {
+                          value: /^[+]?[0-9]{10,15}$/,
+                          message: 'Invalid phone number format'
+                        }
+                      })}
+                      placeholder="10 digits"
                     />
+                    {errors.phone && <p className={styles.errorText}>{errors.phone.message}</p>}
                   </div>
 
-                  <div className="form-group">
+                  <div className={styles.formGroup}>
                     <label htmlFor="password">
                       {isEditing ? 'Password (leave blank to keep current)' : 'Password'}
                     </label>
                     <input 
                       type="password" 
-                      id="password" 
+                      id="password"
                       name="password"
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      required={!isEditing}
+                      {...register('password', { 
+                        required: isEditing ? false : 'Password is required',
+                        minLength: {
+                          value: 6,
+                          message: 'Password must be at least 6 characters'
+                        }
+                      })}
                     />
+                    {errors.password && <p className={styles.errorText}>{errors.password.message}</p>}
                   </div>
 
-                  <div className="form-group">
+                  <div className={styles.formGroup}>
                     <label htmlFor="role">Role</label>
                     <select 
-                      id="role" 
+                      id="role"
                       name="role"
-                      value={formData.role}
-                      onChange={handleInputChange}
-                      required
+                      {...register('role', { 
+                        required: 'Role is required'
+                      })}
                     >
                       {roleOptions.map((role) => (
-                        <option key={role} value={role}>{role}</option>
+                        <option key={role} value={role}>{roleDisplayMap[role]}</option>
                       ))}
                     </select>
+                    {errors.role && <p className={styles.errorText}>{errors.role.message}</p>}
                   </div>
 
-                  <div className="form-actions">
+                  <div className={styles.formActions}>
                     {isEditing && (
-                      <button type="button" className="cancel-btn" onClick={handleCancelEdit}>
+                      <button type="button" className={styles.cancelBtn} onClick={handleCancelEdit}>
                         Cancel
                       </button>
                     )}
-                    <button type="submit" className="add-button" disabled={isLoading}>
+                    <button type="submit" className={styles.addButton} disabled={isLoading}>
                       {isLoading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'UPDATE' : 'ADD')}
                     </button>
                   </div>
@@ -649,12 +509,12 @@ const ManageUser = () => {
               </div>
             </div>
 
-            <div className="right-panel">
-              <div className="table-container">
-                <div className="table-header">
+            <div className={styles.rightPanel}>
+              <div className={styles.tableContainer}>
+                <div className={styles.tableHeader}>
                   <h2>User Management</h2>
                   <button 
-                    className="refresh-button" 
+                    className={styles.refreshButton} 
                     onClick={fetchUsers}
                     disabled={isFetching}
                   >
@@ -663,18 +523,18 @@ const ManageUser = () => {
                 </div>
                 
                 {isFetching ? (
-                  <div className="loading-container">
-                    <div className="spinner"></div>
+                  <div className={styles.loadingContainer}>
+                    <div className={styles.spinner}></div>
                     <p>Loading users...</p>
                   </div>
                 ) : (
-                  <div className="table-wrapper">
+                  <div className={styles.tableWrapper}>
                     {users.length === 0 ? (
-                      <div className="no-data-message">
+                      <div className={styles.noDataMessage}>
                         <p>No users found. Add a new user to get started.</p>
                       </div>
                     ) : (
-                      <table className="users-table">
+                      <table className={styles.usersTable}>
                         <thead>
                           <tr>
                             <th>ID</th>
@@ -683,9 +543,9 @@ const ManageUser = () => {
                             <th>Phone</th>
                             <th>Role</th>
                             <th>Status</th>
+                            <th>Email Verified</th>
                             <th>Last Login</th>
                             <th>Created At</th>
-                            <th>Assign</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -698,23 +558,20 @@ const ManageUser = () => {
                               <td>{user.phone}</td>
                               <td>{user.role}</td>
                               <td>
-                                <span className={`status-badge ${user.status === 'ACTIVE' ? 'active' : 'inactive'}`}>
+                                <span className={`${styles.statusBadge} ${getStatusBadgeClass(user.status)}`}>
                                   {user.status}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`${styles.emailVerifiedBadge} ${getEmailVerifiedBadgeClass(user.isEmailVerified)}`}>
+                                  {user.isEmailVerified ? 'Verified' : 'Not Verified'}
                                 </span>
                               </td>
                               <td>{user.lastLogin}</td>
                               <td>{user.createdAt}</td>
-                              <td>
+                              <td className={styles.actionButtons}>
                                 <button 
-                                  className="assign-button"
-                                  onClick={() => handleAssign(user.id)}
-                                >
-                                  Assign
-                                </button>
-                              </td>
-                              <td className="action-buttons">
-                                <button 
-                                  className="edit-button" 
+                                  className={styles.editButton} 
                                   onClick={() => handleEdit(user.id)}
                                   title="Edit"
                                 >
@@ -724,7 +581,7 @@ const ManageUser = () => {
                                   </svg>
                                 </button>
                                 <button 
-                                  className="delete-button" 
+                                  className={styles.deleteButton} 
                                   onClick={() => handleDelete(user.id)}
                                   title="Delete"
                                 >
@@ -735,7 +592,7 @@ const ManageUser = () => {
                                 </button>
                                 {user.status === 'ACTIVE' ? (
                                   <button 
-                                    className="disable-button" 
+                                    className={styles.disableButton} 
                                     onClick={() => handleDisable(user.id)}
                                     title="Disable"
                                   >
@@ -746,7 +603,7 @@ const ManageUser = () => {
                                   </button>
                                 ) : (
                                   <button 
-                                    className="enable-button" 
+                                    className={styles.enableButton} 
                                     onClick={() => handleEnable(user.id)}
                                     title="Enable"
                                   >

@@ -1,140 +1,41 @@
+// pages/account/Profile.js
 import React, { useState, useEffect } from 'react';
 import { Helmet } from "react-helmet";
-import Header from "../../components/Header";
-import BottomNavbar from "../../components/BottomNavbar";
-import { useUser } from '../../components/UserContext'; // Import the useUser hook
-import Cookies from 'js-cookie'; // Import Cookies directly
+import { useAuthStore } from '../../stores/authStore';
+import { profileAPI, userAPI } from '../../utils/api';
 import './profile.css';
 
 const Profile = () => {
-  // Get user, setUser, and token from context
-  const { user, setUser, token: contextToken } = useUser();
+  // Get user and auth functions from Zustand store
+  const { user, isAuthenticated, updateUser, logout } = useAuthStore();
   
-  // State for user profile data
-  const [userProfile, setUserProfile] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  
-  // State for profile editing - matching the request format
+  // State for UI interactions only
   const [isEditing, setIsEditing] = useState(false);
   const [profileForm, setProfileForm] = useState({
     full_name: '',
     phone: '',
     email: ''
   });
-  
-  // State for password change
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // Get token from context or cookies
-  const getToken = () => {
-    // First try to get token from context
-    if (contextToken) {
-      return contextToken;
-    }
-    
-    // If not in context, try to get from cookies
-    const tokenFromCookie = Cookies.get('token') || Cookies.get('accessToken');
-    if (tokenFromCookie) {
-      return tokenFromCookie;
-    }
-    
-    return null;
-  };
-
-  // Helper function to get user ID from token or user object
-  const getUserId = () => {
-    // First try to get ID from user object
-    if (user && (user.id || user.user_id)) {
-      return user.id || user.user_id;
-    }
-    
-    // If not available, try to decode the token
-    const token = getToken();
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return payload.id || payload.userId || payload.sub || payload.user_id;
-      } catch (e) {
-        console.error('Error decoding token:', e);
-      }
-    }
-    
-    return null;
-  };
-
-  // Fetch user profile data - using user-specific endpoint
-  const fetchUserProfile = async () => {
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      // Get token using our helper function
-      const token = getToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      // Get user ID
-      const userId = getUserId();
-      if (!userId) {
-        throw new Error('User ID not found. Please login again.');
-      }
-
-      // Using GET /api/users/:userId endpoint for the current user
-      const response = await fetch(`http://3.109.186.142:3005/api/users/${userId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch profile');
-      }
-
-      // Check if response has data object with user details
-      if (!data.data) {
-        throw new Error('Invalid response format: user data missing');
-      }
-
-      // Set the user profile directly from the response
-      const currentUser = data.data;
-      setUserProfile(currentUser);
-      
-      // Initialize profile form with current data - matching the response format
-      setProfileForm({
-        full_name: currentUser.full_name || '',
-        phone: currentUser.phone || '',
-        email: currentUser.email || ''
-      });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch profile when component mounts or when token changes
+  // Initialize form with user data from Zustand store
   useEffect(() => {
-    // Check if we have a token either in context or cookies
-    const token = getToken();
-    if (token) {
-      fetchUserProfile();
-    } else {
-      setError('Authentication token not found. Please login again.');
-      setIsLoading(false);
+    if (user) {
+      setProfileForm({
+        full_name: user.full_name || '',
+        phone: user.phone || '',
+        email: user.email || ''
+      });
     }
-  }, [contextToken]); // Depend on contextToken to refetch when it changes
+  }, [user]);
 
   // Handle profile form input changes
   const handleProfileInputChange = (e) => {
@@ -154,7 +55,7 @@ const Profile = () => {
     });
   };
 
-  // Handle profile update submission - using PUT method
+  // Handle profile update submission using both APIs
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -162,65 +63,49 @@ const Profile = () => {
     setSuccess('');
 
     try {
-      // Get token using our helper function
-      const token = getToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      // Get user ID
-      const userId = getUserId();
-      if (!userId) {
-        throw new Error('User ID not found. Please login again.');
-      }
-
-      // Prepare request body with only the fields that can be updated
+      // Prepare request body
       const requestBody = {
         full_name: profileForm.full_name,
         phone: profileForm.phone,
         email: profileForm.email
       };
 
-      // Using PUT /api/users/:userId endpoint to update user details
-      const response = await fetch(`http://3.109.186.142:3005/api/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to update profile');
+      // Try to update using profileAPI first (current user)
+      let response;
+      try {
+        response = await profileAPI.updateProfile(requestBody);
+      } catch (profileError) {
+        // If profileAPI fails, try with userAPI using user ID
+        const userId = user?.id || user?.user_id;
+        if (userId) {
+          response = await userAPI.updateUser(userId, requestBody);
+        } else {
+          throw profileError;
+        }
+      }
+      
+      if (response.status !== 200) {
+        throw new Error(response.data?.message || 'Failed to update profile');
       }
 
-      // Create updated user object
-      const updatedUser = {
-        ...userProfile,
+      // Update the Zustand store with new data
+      updateUser({
+        ...user,
         full_name: profileForm.full_name,
         phone: profileForm.phone,
         email: profileForm.email
-      };
-
-      // Update the profile state with new data
-      setUserProfile(updatedUser);
-      
-      // Update the context with new user data
-      setUser(updatedUser);
+      });
 
       setSuccess('Profile updated successfully!');
       setIsEditing(false);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'Failed to update profile');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle password change submission
+  // Handle password change submission using both APIs
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -235,35 +120,33 @@ const Profile = () => {
     }
 
     try {
-      // Get token using our helper function
-      const token = getToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-
-      // Get user ID
-      const userId = getUserId();
+      // Get user ID for password change
+      const userId = user?.id || user?.user_id;
       if (!userId) {
         throw new Error('User ID not found. Please login again.');
       }
 
-      // Using POST /api/users/:userId/change-password endpoint
-      const response = await fetch(`http://3.109.186.142:3005/api/users/${userId}/change-password`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      // Try to update using userAPI first
+      let response;
+      try {
+        response = await userAPI.changePassword(userId, {
           oldPassword: passwordForm.oldPassword,
           newPassword: passwordForm.newPassword
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to change password');
+        });
+      } catch (userError) {
+        // If userAPI fails, try with profileAPI if available
+        try {
+          response = await profileAPI.updateProfile({
+            oldPassword: passwordForm.oldPassword,
+            newPassword: passwordForm.newPassword
+          });
+        } catch (profileError) {
+          throw userError; // Throw the original error
+        }
+      }
+      
+      if (response.status !== 200) {
+        throw new Error(response.data?.message || 'Failed to change password');
       }
 
       setSuccess('Password changed successfully!');
@@ -274,7 +157,7 @@ const Profile = () => {
       });
       setShowPasswordForm(false);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message || 'Failed to change password');
     } finally {
       setIsLoading(false);
     }
@@ -283,12 +166,12 @@ const Profile = () => {
   // Cancel profile editing
   const handleCancelEdit = () => {
     setIsEditing(false);
-    // Reset form to current profile data
-    if (userProfile) {
+    // Reset form to current user data from Zustand store
+    if (user) {
       setProfileForm({
-        full_name: userProfile.full_name || '',
-        phone: userProfile.phone || '',
-        email: userProfile.email || ''
+        full_name: user.full_name || '',
+        phone: user.phone || '',
+        email: user.email || ''
       });
     }
   };
@@ -312,6 +195,7 @@ const Profile = () => {
 
   // Function to handle login redirect
   const handleLoginRedirect = () => {
+    logout();
     window.location.href = '/login';
   };
 
@@ -320,8 +204,6 @@ const Profile = () => {
       <Helmet>
         <title>User Profile</title>
       </Helmet>
-      <Header />
-      <BottomNavbar text="User Profile" />
       
       <div className="profile-container">
         {/* Error and Success Messages */}
@@ -337,12 +219,7 @@ const Profile = () => {
         )}
         {success && <div className="success-message">{success}</div>}
         
-        {isLoading ? (
-          <div className="loading-container">
-            <div className="spinner"></div>
-            <p>Loading profile...</p>
-          </div>
-        ) : error && error.includes('Authentication token not found') ? (
+        {!isAuthenticated ? (
           <div className="auth-error-container">
             <h2>Authentication Required</h2>
             <p>You need to be logged in to view your profile.</p>
@@ -422,35 +299,35 @@ const Profile = () => {
                   <div className="profile-row">
                     <div className="profile-item">
                       <span className="label">User ID:</span>
-                      <span className="value">{userProfile?.user_id || user?.user_id}</span>
+                      <span className="value">{user?.user_id || 'Not available'}</span>
                     </div>
                     <div className="profile-item">
                       <span className="label">Full Name:</span>
-                      <span className="value">{userProfile?.full_name || user?.full_name}</span>
+                      <span className="value">{user?.full_name || 'Not available'}</span>
                     </div>
                   </div>
                   
                   <div className="profile-row">
                     <div className="profile-item">
                       <span className="label">Email:</span>
-                      <span className="value">{userProfile?.email || user?.email}</span>
+                      <span className="value">{user?.email || 'Not available'}</span>
                     </div>
                     <div className="profile-item">
                       <span className="label">Phone:</span>
-                      <span className="value">{userProfile?.phone || user?.phone || 'Not provided'}</span>
+                      <span className="value">{user?.phone || 'Not provided'}</span>
                     </div>
                   </div>
                   
                   <div className="profile-row">
                     <div className="profile-item">
                       <span className="label">Role:</span>
-                      <span className="value">{userProfile?.role || user?.role || 'Not assigned'}</span>
+                      <span className="value">{user?.role || 'Not assigned'}</span>
                     </div>
                     <div className="profile-item">
                       <span className="label">Status:</span>
                       <span className="value">
-                        <span className={`status-badge ${userProfile?.is_disabled || user?.is_disabled ? 'inactive' : 'active'}`}>
-                          {userProfile?.is_disabled || user?.is_disabled ? 'Inactive' : 'Active'}
+                        <span className={`status-badge ${user?.is_disabled ? 'inactive' : 'active'}`}>
+                          {user?.is_disabled ? 'Inactive' : 'Active'}
                         </span>
                       </span>
                     </div>
@@ -460,16 +337,16 @@ const Profile = () => {
                     <div className="profile-item">
                       <span className="label">Email Verified:</span>
                       <span className="value">
-                        <span className={`status-badge ${userProfile?.is_email_verified || user?.is_email_verified ? 'verified' : 'not-verified'}`}>
-                          {userProfile?.is_email_verified || user?.is_email_verified ? 'Verified' : 'Not Verified'}
+                        <span className={`status-badge ${user?.is_email_verified ? 'verified' : 'not-verified'}`}>
+                          {user?.is_email_verified ? 'Verified' : 'Not Verified'}
                         </span>
                       </span>
                     </div>
                     <div className="profile-item">
                       <span className="label">Account Disabled:</span>
                       <span className="value">
-                        <span className={`status-badge ${userProfile?.is_disabled || user?.is_disabled ? 'disabled' : 'enabled'}`}>
-                          {userProfile?.is_disabled || user?.is_disabled ? 'Disabled' : 'Enabled'}
+                        <span className={`status-badge ${user?.is_disabled ? 'disabled' : 'enabled'}`}>
+                          {user?.is_disabled ? 'Disabled' : 'Enabled'}
                         </span>
                       </span>
                     </div>
@@ -478,11 +355,11 @@ const Profile = () => {
                   <div className="profile-row">
                     <div className="profile-item">
                       <span className="label">Member Since:</span>
-                      <span className="value">{formatDate(userProfile?.created_at || user?.created_at)}</span>
+                      <span className="value">{formatDate(user?.created_at)}</span>
                     </div>
                     <div className="profile-item">
                       <span className="label">Last Login:</span>
-                      <span className="value">{formatDate(userProfile?.last_login || user?.last_login)}</span>
+                      <span className="value">{formatDate(user?.last_login)}</span>
                     </div>
                   </div>
                 </div>

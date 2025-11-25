@@ -1,31 +1,22 @@
+// pages/JsfcGodown.js
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiSearch, FiChevronDown, FiChevronUp, FiMapPin, FiUpload, FiDownload, FiFileText, FiFile, FiRefreshCw } from 'react-icons/fi';
-import Cookies from 'js-cookie';
-import Header from "../components/Header";
-import BottomNavbar from "../components/BottomNavbar";
-import './jsfcgodown.css';
+import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiSearch, FiChevronDown, FiChevronUp, FiMapPin, FiUpload, FiDownload, FiFileText, FiFile, FiRefreshCw, FiArchive, FiRotateCcw } from 'react-icons/fi';
+import styles from './jsfcgodown.module.css';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { useForm } from 'react-hook-form';
+import { jsfcGodownAPI } from '../utils/api';
+import { useAuthStore } from '../stores/authStore';
 
 const JsfcGodown = () => {
+  // Get auth state and functions from authStore
+  const { user, isAuthenticated, logout } = useAuthStore();
+  
   // Initial state for godowns
   const [godowns, setGodowns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [userInfo, setUserInfo] = useState(null);
-  
-  // Form state - using API field names
-  const [formData, setFormData] = useState({
-    godown_name: '', // Changed from name to godown_name
-    contact: '',
-    address: '',
-    district: '',
-    pin: '', // Changed from pin_code to pin
-    godown_no: '',
-    latitude: '',
-    longitude: ''
-  });
   
   // UI states
   const [isAdding, setIsAdding] = useState(false);
@@ -36,33 +27,39 @@ const JsfcGodown = () => {
   const [expandedRows, setExpandedRows] = useState({});
   const [importing, setImporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importErrors, setImportErrors] = useState([]);
+  const [viewMode, setViewMode] = useState('active'); // 'active' or 'deleted'
   
   // Refs for file inputs
   const excelImportRef = useRef(null);
   
-  // API base URL
-  const API_URL = 'http://3.109.186.142:3005/api/godowns';
-  const AUTH_URL = 'http://3.109.186.142:3005/api/auth';
+  // Initialize React Hook Form
+  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm({
+    defaultValues: {
+      godown_name: '',
+      contact: '',
+      address: '',
+      district: '',
+      pin: '',
+      godown_no: '',
+      latitude: '',
+      longitude: ''
+    }
+  });
   
-  // Get auth token
-  const getAuthToken = () => {
-    return Cookies.get('token');
+  // Check if error is due to authentication
+  const isAuthError = (error) => {
+    return error.response?.status === 401 || 
+           error.message?.includes('Authentication') || 
+           error.message?.includes('Unauthorized') ||
+           error.message?.includes('token');
   };
   
-  // Get user info from token
-  const getUserInfo = () => {
-    const token = Cookies.get('token');
-    if (!token) return null;
-    
-    try {
-      // JWT tokens are base64 encoded, so we can decode the payload
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setUserInfo(payload);
-      return payload;
-    } catch (e) {
-      console.error('Error decoding token:', e);
-      return null;
-    }
+  // Handle logout
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/login';
   };
   
   // Fetch godowns from API
@@ -71,107 +68,106 @@ const JsfcGodown = () => {
     setError(null);
     
     try {
-      const token = getAuthToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
+      let response;
+      
+      if (viewMode === 'active') {
+        response = await jsfcGodownAPI.getGodowns();
+      } else {
+        response = await jsfcGodownAPI.getDeletedGodowns();
       }
       
-      const response = await fetch(API_URL, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token expired or invalid
-          handleLogout();
-          throw new Error('Session expired. Please login again.');
-        }
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
         throw new Error(`Error: ${response.status} ${response.statusText}`);
       }
       
-      const data = await response.json();
+      const data = response.data;
       
-      // Handle the specific API response structure
-      if (data && data.data && data.data.godowns && Array.isArray(data.data.godowns)) {
-        // Response structure: { data: { godowns: [...] } }
-        setGodowns(data.data.godowns);
+      // Handle different response structures based on view mode
+      if (viewMode === 'active') {
+        // For active godowns, check for data.data.godowns structure
+        if (data && data.data && data.data.godowns && Array.isArray(data.data.godowns)) {
+          setGodowns(data.data.godowns);
+        } else if (data && Array.isArray(data)) {
+          setGodowns(data);
+        } else {
+          console.error('Unexpected API response structure for active godowns:', data);
+          throw new Error('Unexpected API response structure for active godowns');
+        }
       } else {
-        console.error('Unexpected API response structure:', data);
-        throw new Error('Unexpected API response structure');
+        // For deleted godowns, check for data structure (direct array)
+        if (data && data.success === true && Array.isArray(data.data)) {
+          setGodowns(data.data);
+        } else if (data && Array.isArray(data)) {
+          setGodowns(data);
+        } else {
+          console.error('Unexpected API response structure for deleted godowns:', data);
+          throw new Error('Unexpected API response structure for deleted godowns');
+        }
       }
     } catch (err) {
       console.error('Error fetching godowns:', err);
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        return;
+      }
+      
       setError(err.message || 'Failed to fetch godowns');
-      setGodowns([]); // Ensure godowns is always an array
+      setGodowns([]);
     } finally {
       setLoading(false);
     }
   };
   
-  // Load godowns and user info on component mount
+  // Load godowns on component mount and when authentication changes
   useEffect(() => {
-    getUserInfo();
-    fetchGodowns();
-  }, []);
+    if (isAuthenticated) {
+      fetchGodowns();
+    } else {
+      setLoading(false);
+      setError('Authentication required. Please login.');
+    }
+  }, [isAuthenticated, viewMode]);
   
   // Fetch a single godown by ID
   const fetchGodownById = async (id) => {
     try {
-      const token = getAuthToken();
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
+      const response = await jsfcGodownAPI.getGodownById(id);
       
-      const response = await fetch(`${API_URL}/${id}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
         throw new Error(`Error: ${response.status} ${response.statusText}`);
       }
       
-      const data = await response.json();
+      const data = response.data;
       
-      // Handle the API response structure for single godown
       if (data && data.data && data.data.godown) {
-        // Response structure: { data: { godown: {...} } }
         return data.data.godown;
       } else if (data && data.data) {
-        // Response structure: { data: {...} }
         return data.data;
       } else {
-        // Response is directly the godown
         return data;
       }
     } catch (err) {
       console.error('Error fetching godown:', err);
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        throw new Error('Session expired. Please login again.');
+      }
+      
       throw err;
     }
   };
   
-  // Handle logout
-  const handleLogout = () => {
-    Cookies.remove('token');
-    setUserInfo(null);
-    window.location.href = '/login'; // Redirect to login page
-  };
-  
-  // Filter and sort godowns with safeguards
+  // Filter and sort godowns
   const filteredGodowns = useMemo(() => {
-    // Ensure godowns is always an array
     const godownsArray = Array.isArray(godowns) ? godowns : [];
-    
     let result = [...godownsArray];
     
-    // Apply search filter - using API field names
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(godown => 
@@ -184,10 +180,8 @@ const JsfcGodown = () => {
       );
     }
     
-    // Apply sorting
     if (sortConfig.key) {
       result.sort((a, b) => {
-        // Handle null/undefined values
         const aValue = a[sortConfig.key] || '';
         const bValue = b[sortConfig.key] || '';
         
@@ -204,100 +198,54 @@ const JsfcGodown = () => {
     return result;
   }, [godowns, searchTerm, sortConfig]);
   
-  // Handle form input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
-  };
-  
-  // Handle form submission for adding/editing
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Handle form submission
+  const onSubmit = async (data) => {
     setSubmitting(true);
     
     try {
-      const token = getAuthToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-      
-      // Create a copy of form data to ensure all fields are included
-      // Convert latitude and longitude to numbers as expected by API
       const requestData = {
-        godown_name: formData.godown_name,
-        contact: formData.contact,
-        address: formData.address,
-        district: formData.district,
-        pin: formData.pin,
-        godown_no: formData.godown_no,
-        latitude: parseFloat(formData.latitude),
-        longitude: parseFloat(formData.longitude)
+        godown_name: data.godown_name,
+        contact: data.contact,
+        address: data.address,
+        district: data.district,
+        pin: data.pin,
+        godown_no: data.godown_no,
+        latitude: parseFloat(data.latitude),
+        longitude: parseFloat(data.longitude)
       };
       
-      // Add ID only when editing
-      if (isEditing && editingId) {
-        requestData.id = editingId;
-      }
-      
-      // Log the data being sent for debugging
-      console.log('Sending data:', requestData);
-      
-      let url = API_URL;
-      let method = 'POST';
+      let response;
       
       if (isEditing && editingId) {
-        // Use PUT method with the specific godown ID
-        url = `${API_URL}/${editingId}`;
-        method = 'PUT';
+        response = await jsfcGodownAPI.updateGodown(editingId, requestData);
+      } else {
+        response = await jsfcGodownAPI.createGodown(requestData);
       }
       
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(requestData)
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          handleLogout();
-          throw new Error('Session expired. Please login again.');
-        }
-        const errorData = await response.json();
-        console.error('Error response:', errorData);
-        throw new Error(errorData.message || `Error: ${response.status} ${response.statusText}`);
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
       }
       
-      const responseData = await response.json();
-      console.log('Success response:', responseData);
-      
-      // Refresh godowns list
+      // Refresh the godowns list after successful operation
       await fetchGodowns();
       
-      // Reset form and UI state
       setIsAdding(false);
       setIsEditing(false);
       setEditingId(null);
-      setFormData({
-        godown_name: '',
-        contact: '',
-        address: '',
-        district: '',
-        pin: '',
-        godown_no: '',
-        latitude: '',
-        longitude: ''
-      });
+      reset();
       
       alert(isEditing ? 'Godown updated successfully!' : 'Godown added successfully!');
     } catch (err) {
       console.error('Error submitting godown:', err);
-      alert(err.message || 'Failed to submit godown');
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        return;
+      }
+      
+      alert(err.response?.data?.message || err.message || 'Failed to submit godown');
     } finally {
       setSubmitting(false);
     }
@@ -306,28 +254,30 @@ const JsfcGodown = () => {
   // Edit a godown
   const handleEdit = async (godown) => {
     try {
-      // Fetch the complete godown data
       const godownData = await fetchGodownById(godown.id);
       
-      // Set the form data with the godown details - using API field names
-      setFormData({
-        godown_name: godownData.godown_name || '',
-        contact: godownData.contact || '',
-        address: godownData.address || '',
-        district: godownData.district || '',
-        pin: godownData.pin || '',
-        godown_no: godownData.godown_no || '',
-        latitude: godownData.latitude || '',
-        longitude: godownData.longitude || ''
-      });
+      setValue('godown_name', godownData.godown_name || '');
+      setValue('contact', godownData.contact || '');
+      setValue('address', godownData.address || '');
+      setValue('district', godownData.district || '');
+      setValue('pin', godownData.pin || '');
+      setValue('godown_no', godownData.godown_no || '');
+      setValue('latitude', godownData.latitude || '');
+      setValue('longitude', godownData.longitude || '');
       
-      // Set editing state
       setIsEditing(true);
       setIsAdding(true);
       setEditingId(godown.id);
     } catch (err) {
       console.error('Error fetching godown details:', err);
-      alert('Failed to fetch godown details');
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        return;
+      }
+      
+      alert(err.message || 'Failed to fetch godown details');
     }
   };
   
@@ -338,33 +288,56 @@ const JsfcGodown = () => {
     }
     
     try {
-      const token = getAuthToken();
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
+      const response = await jsfcGodownAPI.deleteGodown(id);
       
-      const response = await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          handleLogout();
-          throw new Error('Session expired. Please login again.');
-        }
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
         throw new Error(`Error: ${response.status} ${response.statusText}`);
       }
       
-      // Refresh godowns list
+      // Refresh the godowns list after successful deletion
       await fetchGodowns();
       alert('Godown deleted successfully!');
     } catch (err) {
       console.error('Error deleting godown:', err);
-      alert(err.message || 'Failed to delete godown');
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        return;
+      }
+      
+      alert(err.response?.data?.message || err.message || 'Failed to delete godown');
+    }
+  };
+  
+  // Restore a deleted godown
+  const handleRestore = async (id) => {
+    if (!window.confirm('Are you sure you want to restore this godown?')) {
+      return;
+    }
+    
+    try {
+      const response = await jsfcGodownAPI.restoreGodown(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the godowns list after successful restoration
+      await fetchGodowns();
+      alert('Godown restored successfully!');
+    } catch (err) {
+      console.error('Error restoring godown:', err);
+      
+      // Check if it's an authentication error
+      if (isAuthError(err)) {
+        handleLogout();
+        return;
+      }
+      
+      alert(err.response?.data?.message || err.message || 'Failed to restore godown');
     }
   };
   
@@ -373,16 +346,7 @@ const JsfcGodown = () => {
     setIsAdding(false);
     setIsEditing(false);
     setEditingId(null);
-    setFormData({
-      godown_name: '',
-      contact: '',
-      address: '',
-      district: '',
-      pin: '',
-      godown_no: '',
-      latitude: '',
-      longitude: ''
-    });
+    reset();
   };
   
   // Toggle row expansion
@@ -408,74 +372,60 @@ const JsfcGodown = () => {
     return sortConfig.direction === 'ascending' ? <FiChevronUp /> : <FiChevronDown />;
   };
   
-  // Validate coordinates
-  const validateCoordinates = (lat, lng) => {
-    const latNum = parseFloat(lat);
-    const lngNum = parseFloat(lng);
-    return !isNaN(latNum) && latNum >= -90 && latNum <= 90 && 
-           !isNaN(lngNum) && lngNum >= -180 && lngNum <= 180;
-  };
-  
   // Import from Excel
   const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
     setImporting(true);
+    setImportProgress(0);
+    setImportErrors([]);
+    
     const reader = new FileReader();
     
     reader.onload = async (event) => {
       try {
-        const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        const formData = new FormData();
+        formData.append('file', file);
         
-        // Process imported data - using API field names
-        const importedGodowns = jsonData.map((row, index) => {
-          return {
-            godown_name: row.godown_name || row.name || '',
-            contact: row.contact || '',
-            address: row.address || '',
-            district: row.district || '',
-            pin: row.pin || row.pincode || row.pin_code || '',
-            godown_no: row.godown_no || row.godownNumber || '',
-            latitude: parseFloat(row.latitude) || 0,
-            longitude: parseFloat(row.longitude) || 0
-          };
-        });
+        // Use the updated importGodowns endpoint
+        const response = await jsfcGodownAPI.importGodowns(formData);
         
-        // Get token
-        const token = getAuthToken();
-        if (!token) {
-          throw new Error('Authentication token not found. Please login again.');
+        // Accept any 2xx status as success
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
         }
         
-        // Send each godown to the API
-        const promises = importedGodowns.map(godown => 
-          fetch(API_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(godown)
-          })
-        );
+        const result = response.data;
         
-        await Promise.all(promises);
+        if (result.success === false) {
+          throw new Error(result.message || 'Import failed on the server');
+        }
         
-        // Refresh godowns list
+        // Refresh the godowns list after successful import
         await fetchGodowns();
         
-        alert(`Successfully imported ${importedGodowns.length} godowns!`);
+        let successMessage = 'Excel file imported successfully!';
+        if (result.importedCount !== undefined) {
+          successMessage = `Successfully imported ${result.importedCount} records!`;
+        }
+        if (result.message) {
+          successMessage += ` ${result.message}`;
+        }
+        alert(successMessage);
+        
       } catch (error) {
-        console.error('Error importing Excel file:', error);
-        alert('Error importing Excel file. Please check the file format.');
+        console.error('Error importing godowns:', error);
+        
+        // Check if it's an authentication error
+        if (isAuthError(error)) {
+          handleLogout();
+          return;
+        }
+        
+        alert(error.response?.data?.message || error.message || 'Failed to import godowns');
       } finally {
         setImporting(false);
-        // Reset file input
         if (excelImportRef.current) {
           excelImportRef.current.value = '';
         }
@@ -487,10 +437,8 @@ const JsfcGodown = () => {
   
   // Export to Excel
   const handleExportExcel = () => {
-    // Ensure filteredGodowns is an array
     const godownsToExport = Array.isArray(filteredGodowns) ? filteredGodowns : [];
     
-    // Prepare data for export - using API field names
     const exportData = godownsToExport.map(godown => ({
       Name: godown.godown_name,
       Contact: godown.contact,
@@ -502,32 +450,25 @@ const JsfcGodown = () => {
       Longitude: godown.longitude
     }));
     
-    // Create workbook
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Godowns');
     
-    // Generate and download file
     XLSX.writeFile(workbook, 'JSFC_Godowns.xlsx');
   };
   
   // Export to PDF
   const handleExportPDF = () => {
-    // Ensure filteredGodowns is an array
     const godownsToExport = Array.isArray(filteredGodowns) ? filteredGodowns : [];
     
-    // Create new PDF document
     const doc = new jsPDF();
     
-    // Add title
     doc.setFontSize(18);
     doc.text('JSFC Godown Details', 105, 15, { align: 'center' });
     
-    // Add date
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 105, 25, { align: 'center' });
     
-    // Prepare table data - using API field names
     const tableData = godownsToExport.map(godown => [
       godown.godown_name,
       godown.contact,
@@ -537,7 +478,6 @@ const JsfcGodown = () => {
       `${godown.latitude}, ${godown.longitude}`
     ]);
     
-    // Define table columns
     const tableColumns = [
       { header: 'Name', dataKey: 'godown_name' },
       { header: 'Contact', dataKey: 'contact' },
@@ -547,7 +487,6 @@ const JsfcGodown = () => {
       { header: 'Location', dataKey: 'location' }
     ];
     
-    // Add table to PDF
     doc.autoTable({
       head: [tableColumns.map(col => col.header)],
       body: tableData,
@@ -565,19 +504,33 @@ const JsfcGodown = () => {
       }
     });
     
-    // Save the PDF
     doc.save('JSFC_Godowns.pdf');
   };
   
+  // Toggle between active and deleted godowns view
+  const toggleViewMode = () => {
+    setViewMode(prev => prev === 'active' ? 'deleted' : 'active');
+  };
+  
+  // Show authentication error if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className={styles.errorContainer}>
+        <h2>Authentication Required</h2>
+        <p>You need to be logged in to view this page.</p>
+        <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleLogout}>
+          Go to Login
+        </button>
+      </div>
+    );
+  }
+  
   return (
-    <>
-      <Header />
-      <BottomNavbar text="JSFC Godown Management" />
-    <div className="jsfc-godown-container">
-      <div className="actions-bar">
-        <div className="search-container">
-          <div className="search-input">
-            <FiSearch className="search-icon" />
+    <div className={styles.container}>
+      <div className={styles.actionsBar}>
+        <div className={styles.searchContainer}>
+          <div className={styles.searchInput}>
+            <FiSearch className={styles.searchIcon} />
             <input
               type="text"
               placeholder="Search godowns..."
@@ -587,57 +540,67 @@ const JsfcGodown = () => {
           </div>
         </div>
         
-        <div className="action-buttons">
-          <button 
-            className="btn btn-primary" 
-            onClick={() => {
-              setIsAdding(true);
-              setIsEditing(false);
-              setEditingId(null);
-              setFormData({
-                godown_name: '',
-                contact: '',
-                address: '',
-                district: '',
-                pin: '',
-                godown_no: '',
-                latitude: '',
-                longitude: ''
-              });
-            }}
-          >
-            <FiPlus /> Add New Godown
-          </button>
+        <div className={styles.actionButtons}>
+          {viewMode === 'active' && (
+            <button 
+              className={`${styles.btn} ${styles.btnPrimary}`} 
+              onClick={() => {
+                setIsAdding(true);
+                setIsEditing(false);
+                setEditingId(null);
+                reset();
+              }}
+            >
+              <FiPlus /> Add New Godown
+            </button>
+          )}
           
           <button 
-            className="btn btn-secondary" 
+            className={`${styles.btn} ${styles.btnSecondary}`} 
             onClick={fetchGodowns}
             disabled={loading}
           >
             <FiRefreshCw /> {loading ? 'Refreshing...' : 'Refresh'}
           </button>
           
-          <div className="dropdown">
-            <button className="btn btn-secondary dropdown-toggle">
+          <button 
+            className={`${styles.btn} ${viewMode === 'active' ? styles.btnSecondary : styles.btnPrimary}`}
+            onClick={toggleViewMode}
+          >
+            {viewMode === 'active' ? (
+              <>
+                <FiArchive /> View Deleted
+              </>
+            ) : (
+              <>
+                <FiRotateCcw /> View Active
+              </>
+            )}
+          </button>
+          
+          <div className={styles.dropdown}>
+            <button className={`${styles.btn} ${styles.btnSecondary} ${styles.dropdownToggle}`}>
               <FiDownload /> Export
             </button>
-            <div className="dropdown-menu">
-              <button className="dropdown-item" onClick={handleExportExcel}>
+            <div className={styles.dropdownMenu}>
+              <button className={styles.dropdownItem} onClick={handleExportExcel}>
                 <FiFile /> Export as Excel
               </button>
-              <button className="dropdown-item" onClick={handleExportPDF}>
+              <button className={styles.dropdownItem} onClick={handleExportPDF}>
                 <FiFileText /> Export as PDF
               </button>
             </div>
           </div>
           
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => excelImportRef.current?.click()}
-            disabled={importing}
-          >
-            <FiUpload /> {importing ? 'Importing...' : 'Import Excel'}
-          </button>
+          {viewMode === 'active' && (
+            <button 
+              className={`${styles.btn} ${styles.btnSecondary}`} 
+              onClick={() => excelImportRef.current?.click()}
+              disabled={importing}
+            >
+              <FiUpload /> {importing ? 'Importing...' : 'Import Excel'}
+            </button>
+          )}
           
           <input
             type="file"
@@ -649,131 +612,161 @@ const JsfcGodown = () => {
         </div>
       </div>
       
+      {importing && (
+        <div className={styles.importProgressContainer}>
+          <div className={styles.importProgressBar}>
+            <div 
+              className={styles.importProgressFill} 
+              style={{ width: `${importProgress}%` }}
+            ></div>
+          </div>
+          <div className={styles.importProgressText}>
+            Importing: {importProgress}% complete
+          </div>
+        </div>
+      )}
+      
+      {importErrors.length > 0 && (
+        <div className={styles.importErrorsContainer}>
+          <h3>Import Errors ({importErrors.length})</h3>
+          <ul className={styles.importErrorsList}>
+            {importErrors.map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
       {isAdding && (
-        <div className="form-container">
-          <div className="form-header">
+        <div className={styles.formContainer}>
+          <div className={styles.formHeader}>
             <h2>{isEditing ? 'Edit Godown' : 'Add New Godown'}</h2>
-            <button className="close-btn" onClick={handleCancel}>
+            <button className={styles.closeBtn} onClick={handleCancel}>
               <FiX />
             </button>
           </div>
           
-          <form onSubmit={handleSubmit} className="godown-form">
-            <div className="form-grid">
-              <div className="form-group">
+          <form onSubmit={handleSubmit(onSubmit)} className={styles.godownForm}>
+            <div className={styles.formGrid}>
+              <div className={styles.formGroup}>
                 <label>Name</label>
                 <input
                   type="text"
-                  name="godown_name"
-                  value={formData.godown_name}
-                  onChange={handleInputChange}
+                  {...register('godown_name', { 
+                    required: 'Name is required',
+                    minLength: { value: 2, message: 'Name must be at least 2 characters' }
+                  })}
                   placeholder="Enter name"
-                  required
                 />
+                {errors.godown_name && <p className={styles.errorMessage}>{errors.godown_name.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Contact</label>
                 <input
                   type="tel"
-                  name="contact"
-                  value={formData.contact}
-                  onChange={handleInputChange}
+                  {...register('contact', { 
+                    required: 'Contact is required',
+                    pattern: { value: /^[0-9]{10}$/, message: 'Please enter a valid 10-digit phone number' }
+                  })}
                   placeholder="Enter contact"
-                  required
                 />
+                {errors.contact && <p className={styles.errorMessage}>{errors.contact.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>District</label>
                 <input
                   type="text"
-                  name="district"
-                  value={formData.district}
-                  onChange={handleInputChange}
+                  {...register('district', { 
+                    required: 'District is required',
+                    minLength: { value: 2, message: 'District must be at least 2 characters' }
+                  })}
                   placeholder="Enter district"
-                  required
                 />
+                {errors.district && <p className={styles.errorMessage}>{errors.district.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Pincode</label>
                 <input
                   type="text"
-                  name="pin"
-                  value={formData.pin}
-                  onChange={handleInputChange}
+                  {...register('pin', { 
+                    required: 'Pincode is required',
+                    pattern: { value: /^[0-9]{6}$/, message: 'Please enter a valid 6-digit pincode' }
+                  })}
                   placeholder="Enter pincode"
-                  pattern="[0-9]{6}"
-                  title="Please enter a valid 6-digit pincode"
-                  required
                 />
+                {errors.pin && <p className={styles.errorMessage}>{errors.pin.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Godown Number</label>
                 <input
                   type="text"
-                  name="godown_no"
-                  value={formData.godown_no}
-                  onChange={handleInputChange}
+                  {...register('godown_no', { 
+                    required: 'Godown number is required'
+                  })}
                   placeholder="Enter godown number"
-                  required
                 />
+                {errors.godown_no && <p className={styles.errorMessage}>{errors.godown_no.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Latitude</label>
                 <input
                   type="number"
-                  name="latitude"
-                  value={formData.latitude}
-                  onChange={handleInputChange}
-                  placeholder="e.g., 19.0760"
                   step="any"
-                  min="-90"
-                  max="90"
-                  required
+                  {...register('latitude', { 
+                    required: 'Latitude is required',
+                    min: { value: -90, message: 'Latitude must be between -90 and 90' },
+                    max: { value: 90, message: 'Latitude must be between -90 and 90' },
+                    validate: value => !isNaN(parseFloat(value)) || 'Latitude must be a valid number'
+                  })}
+                  placeholder="e.g., 19.0760"
                 />
+                {errors.latitude && <p className={styles.errorMessage}>{errors.latitude.message}</p>}
               </div>
               
-              <div className="form-group">
+              <div className={styles.formGroup}>
                 <label>Longitude</label>
                 <input
                   type="number"
-                  name="longitude"
-                  value={formData.longitude}
-                  onChange={handleInputChange}
-                  placeholder="e.g., 72.8777"
                   step="any"
-                  min="-180"
-                  max="180"
-                  required
+                  {...register('longitude', { 
+                    required: 'Longitude is required',
+                    min: { value: -180, message: 'Longitude must be between -180 and 180' },
+                    max: { value: 180, message: 'Longitude must be between -180 and 180' },
+                    validate: value => !isNaN(parseFloat(value)) || 'Longitude must be a valid number'
+                  })}
+                  placeholder="e.g., 72.8777"
                 />
+                {errors.longitude && <p className={styles.errorMessage}>{errors.longitude.message}</p>}
               </div>
             </div>
             
-            <div className="form-group full-width">
+            <div className={`${styles.formGroup} ${styles.formGroupFullWidth}`}>
               <label>Address</label>
               <textarea
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
+                {...register('address', { 
+                  required: 'Address is required',
+                  minLength: { value: 5, message: 'Address must be at least 5 characters' }
+                })}
                 placeholder="Enter complete address"
                 rows="3"
-                required
               ></textarea>
+              {errors.address && <p className={styles.errorMessage}>{errors.address.message}</p>}
             </div>
             
-            <div className="form-actions">
+            <div className={styles.formActions}>
               <button 
                 type="submit" 
-                className="btn btn-primary"
-                disabled={!validateCoordinates(formData.latitude, formData.longitude) || submitting}
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                disabled={submitting}
               >
                 <FiSave /> {submitting ? 'Processing...' : (isEditing ? 'Update Godown' : 'Add Godown')}
               </button>
-              <button type="button" className="btn btn-secondary" onClick={handleCancel}>
+              <button type="button" className={`${styles.btn} ${styles.btnSecondary}`} onClick={handleCancel}>
                 Cancel
               </button>
             </div>
@@ -781,29 +774,29 @@ const JsfcGodown = () => {
         </div>
       )}
       
-      <div className="table-container">
-        <div className="table-header">
-          <h2>Godown Records</h2>
-          <div className="table-info">
+      <div className={styles.tableContainer}>
+        <div className={styles.tableHeader}>
+          <h2>{viewMode === 'active' ? 'Active Godown Records' : 'Deleted Godown Records'}</h2>
+          <div className={styles.tableInfo}>
             Showing {Array.isArray(filteredGodowns) ? filteredGodowns.length : 0} of {Array.isArray(godowns) ? godowns.length : 0} godowns
           </div>
         </div>
         
-        <div className="table-wrapper">
+        <div className={styles.tableWrapper}>
           {loading ? (
-            <div className="loading-container">
-              <div className="spinner"></div>
+            <div className={styles.loadingContainer}>
+              <div className={styles.spinner}></div>
               <p>Loading godowns...</p>
             </div>
           ) : error ? (
-            <div className="error-container">
+            <div className={styles.errorContainer}>
               <p>Error: {error}</p>
-              <button className="btn btn-primary" onClick={fetchGodowns}>
+              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchGodowns}>
                 Retry
               </button>
             </div>
           ) : (
-            <table className="godown-table">
+            <table className={styles.godownTable}>
               <thead>
                 <tr>
                   <th onClick={() => requestSort('godown_name')}>
@@ -827,7 +820,7 @@ const JsfcGodown = () => {
                   filteredGodowns.map((godown) => (
                     <React.Fragment key={godown.id}>
                       <tr 
-                        className={`godown-row ${expandedRows[godown.id] ? 'expanded' : ''}`}
+                        className={`${styles.godownRow} ${expandedRows[godown.id] ? styles.godownRowExpanded : ''}`}
                         onClick={() => toggleRowExpansion(godown.id)}
                       >
                         <td>{godown.godown_name}</td>
@@ -835,53 +828,73 @@ const JsfcGodown = () => {
                         <td>{godown.district}</td>
                         <td>{godown.pin}</td>
                         <td>
-                          <div className="location-info">
-                            <FiMapPin className="location-icon" />
+                          <div className={styles.locationInfo}>
+                            <FiMapPin className={styles.locationIcon} />
                             <span>{godown.latitude}, {godown.longitude}</span>
                           </div>
                         </td>
-                        <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
-                          <button 
-                            className="btn-icon btn-edit" 
-                            onClick={() => handleEdit(godown)}
-                            title="Edit"
-                          >
-                            <FiEdit2 />
-                          </button>
-                          <button 
-                            className="btn-icon btn-delete" 
-                            onClick={() => handleDelete(godown.id)}
-                            title="Delete"
-                          >
-                            <FiTrash2 />
-                          </button>
+                        <td className={styles.actionsCell} onClick={(e) => e.stopPropagation()}>
+                          {viewMode === 'active' ? (
+                            <>
+                              <button 
+                                className={`${styles.btnIcon} ${styles.btnEdit}`} 
+                                onClick={() => handleEdit(godown)}
+                                title="Edit"
+                              >
+                                <FiEdit2 />
+                              </button>
+                              <button 
+                                className={`${styles.btnIcon} ${styles.btnDelete}`} 
+                                onClick={() => handleDelete(godown.id)}
+                                title="Delete"
+                              >
+                                <FiTrash2 />
+                              </button>
+                            </>
+                          ) : (
+                            <button 
+                              className={`${styles.btnIcon} ${styles.btnRestore}`} 
+                              onClick={() => handleRestore(godown.id)}
+                              title="Restore"
+                            >
+                              <FiRotateCcw />
+                            </button>
+                          )}
                         </td>
                       </tr>
                       {expandedRows[godown.id] && (
-                        <tr className="expanded-row">
+                        <tr className={styles.expandedRow}>
                           <td colSpan="6">
-                            <div className="expanded-content">
-                              <div className="detail-row">
-                                <div className="detail-label">Godown Number:</div>
-                                <div className="detail-value">{godown.godown_no}</div>
+                            <div className={styles.expandedContent}>
+                              <div className={styles.detailRow}>
+                                <div className={styles.detailLabel}>Godown Number:</div>
+                                <div className={styles.detailValue}>{godown.godown_no}</div>
                               </div>
-                              <div className="detail-row">
-                                <div className="detail-label">Address:</div>
-                                <div className="detail-value">{godown.address}</div>
+                              <div className={styles.detailRow}>
+                                <div className={styles.detailLabel}>Address:</div>
+                                <div className={styles.detailValue}>{godown.address}</div>
                               </div>
-                              <div className="detail-row">
-                                <div className="detail-label">Coordinates:</div>
-                                <div className="detail-value">
+                              <div className={styles.detailRow}>
+                                <div className={styles.detailLabel}>Coordinates:</div>
+                                <div className={styles.detailValue}>
                                   <a 
                                     href={`https://www.google.com/maps?q=${godown.latitude},${godown.longitude}`} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
-                                    className="map-link"
+                                    className={styles.mapLink}
                                   >
                                     View on Map
                                   </a>
                                 </div>
                               </div>
+                              {viewMode === 'deleted' && godown.deleted_at && (
+                                <div className={styles.detailRow}>
+                                  <div className={styles.detailLabel}>Deleted At:</div>
+                                  <div className={styles.detailValue}>
+                                    {new Date(godown.deleted_at).toLocaleString()}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -890,8 +903,10 @@ const JsfcGodown = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="no-data">
-                      No godown records found
+                    <td colSpan="6" className={styles.noData}>
+                      {viewMode === 'active' 
+                        ? 'No active godown records found' 
+                        : 'No deleted godown records found'}
                     </td>
                   </tr>
                 )}
@@ -901,7 +916,6 @@ const JsfcGodown = () => {
         </div>
       </div>
     </div>
-    </>
   );
 };
 

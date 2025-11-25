@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
-import Header from "../../components/Header";
-import BottomNavbar from "../../components/BottomNavbar";
-import './historytracking.css';
+// import Header from "../../components/Header";
+// import BottomNavbar from "../../components/BottomNavbar";
+import styles from './HistoryTracking.module.css'; // Import the CSS module
 import { MapContainer, TileLayer, Popup, Polyline, Marker, Tooltip, ScaleControl, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -376,10 +376,10 @@ const ResizableDivider = ({ onResize }) => {
 
   return (
     <div
-      className={`resizable-divider ${isDragging ? 'dragging' : ''}`}
+      className={`${styles.resizableDivider} ${isDragging ? styles.dragging : ''}`}
       onMouseDown={handleMouseDown}
     >
-      <div className="divider-line"></div>
+      <div className={styles.dividerLine}></div>
     </div>
   );
 };
@@ -535,29 +535,28 @@ const TrackingHistory = () => {
         <link rel="icon" href="/favicon.ico" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Helmet>
-      <Header />
-      <BottomNavbar text="Tracking History" />
-      <div className="tracking-history-container">
+      {/* <BottomNavbar text="Tracking History" /> */}
+      <div className={styles.container}>
 
-        <div className="main-content">
-          <div className="sidebar" style={{ width: `${sidebarWidth}%` }}>
+        <div className={styles.mainContent}>
+          <div className={styles.sidebar} style={{ width: `${sidebarWidth}%` }}>
             {loading ? (
-              <div className="loading">Loading vehicles...</div>
+              <div className={styles.loading}>Loading vehicles...</div>
             ) : error && !selectedVehicle ? (
-              <div className="error">
+              <div className={styles.error}>
                 Error: {error} <button onClick={() => fetchDevices(setDevicesData, setLoading, setError)}>Retry</button>
               </div>
             ) : (
               <>
-                <div className="filter-section">
+                <div className={styles.filterSection}>
                   <h3>Select Vehicle</h3>
-                  <select className="filter-select" value={selectedVehicle} onChange={(e) => setSelectedVehicle(e.target.value)}>
+                  <select className={styles.filterSelect} value={selectedVehicle} onChange={(e) => setSelectedVehicle(e.target.value)}>
                     {vehicles.map(vehicle => (
                       <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>
                     ))}
                   </select>
                 </div>
-                <div className="filter-section">
+                <div className={styles.filterSection}>
                   <h3>Date Range</h3>
                   <input
                     type="datetime-local"
@@ -572,15 +571,15 @@ const TrackingHistory = () => {
                     placeholder="End Date"
                   />
                 </div>
-                <div className="filter-section">
-                  <button className="view-button" onClick={handleView} disabled={trackLoading}>
+                <div className={styles.filterSection}>
+                  <button className={styles.viewButton} onClick={handleView} disabled={trackLoading}>
                     {trackLoading ? 'Loading...' : 'View'}
                   </button>
                 </div>
                 {historyTrack.length > 0 && (
-                  <div className="filter-section">
+                  <div className={styles.filterSection}>
                     <h3>Animation Speed</h3>
-                    <div className="speed-control">
+                    <div className={styles.speedControl}>
                       <input
                         type="range"
                         min="5000"
@@ -594,9 +593,9 @@ const TrackingHistory = () => {
                   </div>
                 )}
                 {historyTrack.length > 0 && (
-                  <div className="filter-section">
+                  <div className={styles.filterSection}>
                     <h3>Display Options</h3>
-                    <label className="checkbox-label">
+                    <label className={styles.checkboxLabel}>
                       <input
                         type="checkbox"
                         checked={showPath}
@@ -607,16 +606,16 @@ const TrackingHistory = () => {
                   </div>
                 )}
                 {trackLoading && selectedVehicle && (
-                  <div className="loading">Loading track data...</div>
+                  <div className={styles.loading}>Loading track data...</div>
                 )}
                 {historyTrack.length === 0 && selectedVehicle && !loading && !trackLoading && !error && (
-                  <div className="no-data">
+                  <div className={styles.noData}>
                     No valid track data available for this vehicle.
                     <button onClick={handleView}>Retry</button>
                   </div>
                 )}
                 {error && selectedVehicle && (
-                  <div className="error">
+                  <div className={styles.error}>
                     Error: {error}
                     <button onClick={handleView}>Retry</button>
                   </div>
@@ -627,13 +626,13 @@ const TrackingHistory = () => {
 
           <ResizableDivider onResize={handleSidebarResize} />
 
-          <div className="map-container" style={{ width: `${100 - sidebarWidth}%` }}>
-            <button className="map-mode-btn" onClick={toggleMapMode}>
+          <div className={styles.mapContainer} style={{ width: `${100 - sidebarWidth}%` }}>
+            <button className={styles.mapModeBtn} onClick={toggleMapMode}>
               {mapMode === 'roadmap' ? 'Satellite View' : 'Roadmap View'}
             </button>
             {historyTrack.length > 0 && !trackLoading && (
-              <div className="playback-controls">
-                <div className="control-buttons">
+              <div className={styles.playbackControls}>
+                <div className={styles.controlButtons}>
                   <button onClick={handlePlayPause} disabled={trackLoading}>
                     {isPlaying ? 'Pause' : 'Play'}
                   </button>
@@ -641,14 +640,14 @@ const TrackingHistory = () => {
                     Reset
                   </button>
                 </div>
-                <div className="progress-container">
-                  <div className="progress-bar">
+                <div className={styles.progressContainer}>
+                  <div className={styles.progressBar}>
                     <div
-                      className="progress-fill"
+                      className={styles.progressFill}
                       style={{ width: `${historyTrack.length > 0 ? (playbackIndex / (historyTrack.length - 1)) * 100 : 0}%` }}
                     />
                   </div>
-                  <span className="progress-text">
+                  <span className={styles.progressText}>
                     {historyTrack.length > 0 ? `${playbackIndex + 1} / ${historyTrack.length}` : '0 / 0'}
                   </span>
                 </div>
@@ -675,7 +674,7 @@ const TrackingHistory = () => {
                   weight={5}
                   opacity={0.7}
                   smoothFactor={1}
-                  className="history-path"
+                  className={styles.historyPath}
                 />
               )}
               {currentLoc && !trackLoading && (
@@ -697,7 +696,7 @@ const TrackingHistory = () => {
                     {vehicles.find(v => v.id === selectedVehicle)?.name || 'Vehicle'}
                   </Tooltip>
                   <Popup>
-                    <div className="popup-content">
+                    <div className={styles.popupContent}>
                       <h3>Vehicle Details</h3>
                       <p><strong>Timestamp:</strong> {formatTimestamp(currentLoc.timestamp)}</p>
                       <p><strong>Speed:</strong> {currentLoc.speed || 0} km/h</p>
@@ -712,25 +711,25 @@ const TrackingHistory = () => {
           </div>
         </div>
 
-        <div className="status-bar">
-          <div className="status-item">
-            <span className="status-label">Current Time:</span>
+        <div className={styles.statusBar}>
+          <div className={styles.statusItem}>
+            <span className={styles.statusLabel}>Current Time:</span>
             <span>{currentTime.toLocaleTimeString()}</span>
           </div>
-          <div className="status-item">
-            <span className="status-label">Selected Vehicle:</span>
+          <div className={styles.statusItem}>
+            <span className={styles.statusLabel}>Selected Vehicle:</span>
             <span>{selectedVehicle ? vehicles.find(v => v.id === selectedVehicle)?.name : 'None'}</span>
           </div>
-          <div className="status-item">
-            <span className="status-label">Playback Progress:</span>
+          <div className={styles.statusItem}>
+            <span className={styles.statusLabel}>Playback Progress:</span>
             <span>{historyTrack.length > 0 ? `${playbackIndex + 1} / ${historyTrack.length}` : 'N/A'}</span>
           </div>
-          <div className="status-item">
-            <span className="status-label">Playback Time:</span>
+          <div className={styles.statusItem}>
+            <span className={styles.statusLabel}>Playback Time:</span>
             <span>{formatTimestamp(currentLoc?.timestamp)}</span>
           </div>
-          <div className="status-item">
-            <span className="status-label">View Mode:</span>
+          <div className={styles.statusItem}>
+            <span className={styles.statusLabel}>View Mode:</span>
             <span>{mapMode === 'roadmap' ? 'Roadmap' : 'Satellite'}</span>
           </div>
         </div>
