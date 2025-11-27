@@ -344,6 +344,35 @@ export const useDataStore = create((set, get) => ({
     }
   },
   
+  fetchDrivers: async () => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.getUsers({ role: 'DRIVER' });
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      if (data && data.data && data.data.users && Array.isArray(data.data.users)) {
+        set({ users: data.data.users });
+      } else if (data && Array.isArray(data)) {
+        set({ users: data });
+      } else {
+        console.error('Unexpected API response structure for drivers:', data);
+        throw new Error('Unexpected API response structure for drivers');
+      }
+    } catch (error) {
+      console.error('Error fetching drivers:', error);
+      set({ usersError: error.message || 'Failed to fetch drivers' });
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
   addUser: async (userData) => {
     set({ usersLoading: true, usersError: null });
     

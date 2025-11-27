@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
-// import Header from "../../components/Header";
-// import BottomNavbar from "../../components/BottomNavbar";
-import styles from './HistoryTracking.module.css'; // Import the CSS module
+import styles from './HistoryTracking.module.css';
 import { MapContainer, TileLayer, Popup, Polyline, Marker, Tooltip, ScaleControl, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useDatabaseGpsData } from '../../stores/dataDatabaseGpsStore';
 
 // Fix for default markers in Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -14,96 +13,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: require('leaflet/dist/images/marker-icon.png'),
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
-
-// API configuration
-const API_BASE_URL = process.env.VEHICLE_TABLE_API_URL || 'http://3.109.186.142:3020';
-
-// Fetch devices from backend
-const fetchDevices = async (setDevicesData, setLoading, setError) => {
-  try {
-    setLoading(true);
-    console.log(`📱 Fetching devices from: ${API_BASE_URL}/api/devices`);
-    const response = await fetch(`${API_BASE_URL}/api/devices`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch devices: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    console.log('✅ Devices API response:', data);
-    if (data.success && data.data && Array.isArray(data.data.devices)) {
-      const devicesObject = {};
-      data.data.devices.forEach(device => {
-        if (device.imei) {
-          devicesObject[device.imei] = device;
-        }
-      });
-      setDevicesData(devicesObject);
-      setError(null);
-      console.log(`📱 Processed ${Object.keys(devicesObject).length} devices`);
-    } else {
-      throw new Error(data.error?.message || 'Invalid devices data structure');
-    }
-  } catch (err) {
-    console.error('❌ Error fetching devices:', err);
-    setError(err.message);
-    setDevicesData({});
-  } finally {
-    setLoading(false);
-  }
-};
-
-// Fetch full device data for history track
-const fetchFullDeviceData = async (imei, startDate, endDate, setHistoryTrack, setError, setTrackLoading) => {
-  try {
-    setTrackLoading(true);
-    let url = `${API_BASE_URL}/api/devices/${imei}/full`;
-    if (startDate && endDate) {
-      const params = new URLSearchParams({ startDate, endDate });
-      url += `?${params.toString()}`;
-    }
-    console.log(`📊 Fetching full device data for: ${imei} with URL: ${url}`);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch full device data: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    console.log(`✅ Full device data for ${imei}:`, JSON.stringify(data, null, 2));
-    if (data.success && data.data && Array.isArray(data.data.track)) {
-      const track = data.data.track
-        .map((loc, index) => {
-          const lat = parseFloat(loc.latitude);
-          const lng = parseFloat(loc.longitude);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-            console.warn(`⚠️ Invalid coordinates at index ${index}:`, loc);
-            return null;
-          }
-          return {
-            latitude: lat,
-            longitude: lng,
-            speed: Number.isFinite(parseFloat(loc.speed)) ? parseFloat(loc.speed) : 0,
-            heading: Number.isFinite(parseFloat(loc.heading)) ? parseFloat(loc.heading) : 0,
-            altitude: Number.isFinite(parseFloat(loc.altitude)) ? parseFloat(loc.altitude) : 0,
-            timestamp: loc.created_at || null,
-            raw_packet: loc.raw_packet || null,
-          };
-        })
-        .filter(loc => loc !== null);
-      if (track.length === 0) {
-        throw new Error('No valid track points found');
-      }
-      setHistoryTrack(track);
-      setError(null);
-      console.log(`🛣️ Device ${imei} track: ${track.length} points`);
-    } else {
-      throw new Error(data.error?.message || 'No track data available');
-    }
-  } catch (err) {
-    console.error(`❌ Error fetching full data for ${imei}:`, err);
-    setHistoryTrack([]);
-    setError(err.message);
-  } finally {
-    setTrackLoading(false);
-  }
-};
 
 // Calculate heading between two points
 const calculateHeading = (fromLat, fromLng, toLat, toLng) => {
@@ -388,11 +297,6 @@ const TrackingHistory = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [mapMode, setMapMode] = useState('roadmap');
   const [selectedVehicle, setSelectedVehicle] = useState('');
-  const [devicesData, setDevicesData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [trackLoading, setTrackLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [historyTrack, setHistoryTrack] = useState([]);
   const [playbackIndex, setPlaybackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(30);
@@ -402,7 +306,17 @@ const TrackingHistory = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const mapRef = useRef(null);
-  const isMounted = useRef(false);
+  
+  // Use Zustand store instead of local state
+  const {
+    devices,
+    tracks,
+    loading,
+    error,
+    trackLoading,
+    fetchDevices,
+    fetchDeviceTrack
+  } = useDatabaseGpsData();
 
   const mapLayers = {
     roadmap: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -410,33 +324,30 @@ const TrackingHistory = () => {
   };
 
   useEffect(() => {
-    isMounted.current = true;
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 60000);
-    return () => {
-      isMounted.current = false;
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    fetchDevices(setDevicesData, setLoading, setError);
-  }, []);
+    // Fetch devices from store instead of API
+    fetchDevices();
+  }, [fetchDevices]);
 
   const vehicles = useMemo(() => {
-    if (!devicesData || typeof devicesData !== 'object') {
+    if (!devices || typeof devices !== 'object') {
       return [{ id: '', name: 'Select Vehicle' }];
     }
     return [
       { id: '', name: 'Select Vehicle' },
-      ...Object.entries(devicesData).map(([imei, device]) => ({
+      ...Object.entries(devices).map(([imei, device]) => ({
         id: imei,
         name: device.device_name || imei,
         status: device.is_active ? 'Active' : 'Inactive'
       }))
     ];
-  }, [devicesData]);
+  }, [devices]);
 
   const toggleMapMode = () => {
     setMapMode(prev => prev === 'roadmap' ? 'satellite' : 'roadmap');
@@ -449,14 +360,14 @@ const TrackingHistory = () => {
     }
     setPlaybackIndex(0);
     setIsPlaying(false);
-    setHistoryTrack([]);
-    setError(null);
     setResetTrigger(prev => prev + 1);
-    fetchFullDeviceData(selectedVehicle, startDate, endDate, setHistoryTrack, setError, setTrackLoading);
+    
+    // Fetch track data from store instead of API
+    fetchDeviceTrack(selectedVehicle, startDate, endDate);
   };
 
   const handlePlayPause = () => {
-    if (playbackIndex >= historyTrack.length - 1) {
+    if (playbackIndex >= (tracks[selectedVehicle]?.length || 0) - 1) {
       setPlaybackIndex(0);
       setResetTrigger(prev => prev + 1);
       setTimeout(() => {
@@ -474,35 +385,37 @@ const TrackingHistory = () => {
   };
 
   useEffect(() => {
-    if (historyTrack.length > 0 && mapRef.current && !trackLoading && isMounted.current) {
-      const firstPos = historyTrack[0];
+    if (tracks[selectedVehicle]?.length > 0 && mapRef.current && !trackLoading) {
+      const firstPos = tracks[selectedVehicle][0];
       if (Number.isFinite(firstPos.latitude) && Number.isFinite(firstPos.longitude)) {
         mapRef.current.flyTo([firstPos.latitude, firstPos.longitude], 15, { animate: true, duration: 1.0 });
       }
     }
-  }, [historyTrack, trackLoading]);
+  }, [tracks, selectedVehicle, trackLoading]);
 
   const positions = useMemo(() => {
-    const validPositions = historyTrack
+    const trackData = tracks[selectedVehicle] || [];
+    const validPositions = trackData
       .filter(loc => loc && Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude))
       .map(loc => [loc.latitude, loc.longitude]);
-    console.log(`🗺️ Rendered positions: ${validPositions.length} out of ${historyTrack.length} track points`);
+    console.log(`🗺️ Rendered positions: ${validPositions.length} out of ${trackData.length} track points`);
     return validPositions;
-  }, [historyTrack]);
+  }, [tracks, selectedVehicle]);
 
   const currentLoc = useMemo(() => {
+    const trackData = tracks[selectedVehicle] || [];
     if (
-      historyTrack.length > 0 &&
+      trackData.length > 0 &&
       playbackIndex >= 0 &&
-      playbackIndex < historyTrack.length &&
-      historyTrack[playbackIndex] &&
-      Number.isFinite(historyTrack[playbackIndex].latitude) &&
-      Number.isFinite(historyTrack[playbackIndex].longitude)
+      playbackIndex < trackData.length &&
+      trackData[playbackIndex] &&
+      Number.isFinite(trackData[playbackIndex].latitude) &&
+      Number.isFinite(trackData[playbackIndex].longitude)
     ) {
-      return historyTrack[playbackIndex];
+      return trackData[playbackIndex];
     }
     return null;
-  }, [historyTrack, playbackIndex]);
+  }, [tracks, selectedVehicle, playbackIndex]);
 
   const formatTimestamp = (ts) => {
     if (!ts) return 'N/A';
@@ -535,16 +448,15 @@ const TrackingHistory = () => {
         <link rel="icon" href="/favicon.ico" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Helmet>
-      {/* <BottomNavbar text="Tracking History" /> */}
+      
       <div className={styles.container}>
-
         <div className={styles.mainContent}>
           <div className={styles.sidebar} style={{ width: `${sidebarWidth}%` }}>
             {loading ? (
               <div className={styles.loading}>Loading vehicles...</div>
             ) : error && !selectedVehicle ? (
               <div className={styles.error}>
-                Error: {error} <button onClick={() => fetchDevices(setDevicesData, setLoading, setError)}>Retry</button>
+                Error: {error} <button onClick={fetchDevices}>Retry</button>
               </div>
             ) : (
               <>
@@ -576,7 +488,7 @@ const TrackingHistory = () => {
                     {trackLoading ? 'Loading...' : 'View'}
                   </button>
                 </div>
-                {historyTrack.length > 0 && (
+                {tracks[selectedVehicle]?.length > 0 && (
                   <div className={styles.filterSection}>
                     <h3>Animation Speed</h3>
                     <div className={styles.speedControl}>
@@ -592,7 +504,7 @@ const TrackingHistory = () => {
                     </div>
                   </div>
                 )}
-                {historyTrack.length > 0 && (
+                {tracks[selectedVehicle]?.length > 0 && (
                   <div className={styles.filterSection}>
                     <h3>Display Options</h3>
                     <label className={styles.checkboxLabel}>
@@ -608,7 +520,7 @@ const TrackingHistory = () => {
                 {trackLoading && selectedVehicle && (
                   <div className={styles.loading}>Loading track data...</div>
                 )}
-                {historyTrack.length === 0 && selectedVehicle && !loading && !trackLoading && !error && (
+                {!tracks[selectedVehicle] && selectedVehicle && !loading && !trackLoading && !error && (
                   <div className={styles.noData}>
                     No valid track data available for this vehicle.
                     <button onClick={handleView}>Retry</button>
@@ -630,7 +542,7 @@ const TrackingHistory = () => {
             <button className={styles.mapModeBtn} onClick={toggleMapMode}>
               {mapMode === 'roadmap' ? 'Satellite View' : 'Roadmap View'}
             </button>
-            {historyTrack.length > 0 && !trackLoading && (
+            {tracks[selectedVehicle]?.length > 0 && !trackLoading && (
               <div className={styles.playbackControls}>
                 <div className={styles.controlButtons}>
                   <button onClick={handlePlayPause} disabled={trackLoading}>
@@ -644,11 +556,11 @@ const TrackingHistory = () => {
                   <div className={styles.progressBar}>
                     <div
                       className={styles.progressFill}
-                      style={{ width: `${historyTrack.length > 0 ? (playbackIndex / (historyTrack.length - 1)) * 100 : 0}%` }}
+                      style={{ width: `${tracks[selectedVehicle]?.length > 0 ? (playbackIndex / (tracks[selectedVehicle].length - 1)) * 100 : 0}%` }}
                     />
                   </div>
                   <span className={styles.progressText}>
-                    {historyTrack.length > 0 ? `${playbackIndex + 1} / ${historyTrack.length}` : '0 / 0'}
+                    {tracks[selectedVehicle]?.length > 0 ? `${playbackIndex + 1} / ${tracks[selectedVehicle].length}` : '0 / 0'}
                   </span>
                 </div>
               </div>
@@ -722,7 +634,7 @@ const TrackingHistory = () => {
           </div>
           <div className={styles.statusItem}>
             <span className={styles.statusLabel}>Playback Progress:</span>
-            <span>{historyTrack.length > 0 ? `${playbackIndex + 1} / ${historyTrack.length}` : 'N/A'}</span>
+            <span>{tracks[selectedVehicle]?.length > 0 ? `${playbackIndex + 1} / ${tracks[selectedVehicle].length}` : 'N/A'}</span>
           </div>
           <div className={styles.statusItem}>
             <span className={styles.statusLabel}>Playback Time:</span>

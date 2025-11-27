@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './Transporter.module.css';
-import { useGodowns, useGoods } from '../hooks/useData';
+import { useGodowns, useGoods, useUsers } from '../hooks/useData';
+import { useGpsStore } from '../stores/gpsStore';
 
 // Custom Searchable Select Component
 const SearchableSelect = ({ 
@@ -16,7 +17,8 @@ const SearchableSelect = ({
   detailsVisible,
   detailsContent,
   displayField,
-  secondaryField
+  secondaryField,
+  idField = 'id' // Added to support different ID fields like 'imei'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showOptions, setShowOptions] = useState(false);
@@ -27,12 +29,12 @@ const SearchableSelect = ({
   ) || [];
   
   const handleSelect = (option) => {
-    onChange({ target: { name, value: option.id } });
+    onChange({ target: { name, value: option[idField] } });
     setSearchTerm('');
     setShowOptions(false);
   };
   
-  const selectedOption = options?.find(option => option.id === value);
+  const selectedOption = options?.find(option => option[idField] === value);
   
   return (
     <div className={styles.formGroup}>
@@ -58,7 +60,7 @@ const SearchableSelect = ({
               ) : filteredOptions.length > 0 ? (
                 filteredOptions.map(option => (
                   <div 
-                    key={option.id} 
+                    key={option[idField]} 
                     className={styles.optionItem}
                     onClick={() => handleSelect(option)}
                   >
@@ -80,12 +82,12 @@ const SearchableSelect = ({
             {detailsVisible ? 'Hide Details' : 'Show Details'}
           </button>
         )}
+        {detailsVisible && detailsContent && (
+          <div className={styles.detailsDropdown}>
+            {detailsContent}
+          </div>
+        )}
       </div>
-      {detailsVisible && detailsContent && (
-        <div className={styles.detailsDropdown}>
-          {detailsContent}
-        </div>
-      )}
     </div>
   );
 };
@@ -95,7 +97,6 @@ const Transporter = () => {
   const [formData, setFormData] = useState({
     departure: '',
     destination: '',
-    dateTime: '',
     vehicle: '',
     driver: '',
     goods: ''
@@ -105,12 +106,16 @@ const Transporter = () => {
   const [showDetails, setShowDetails] = useState({
     departure: false,
     destination: false,
-    goods: false
+    goods: false,
+    vehicle: false,
+    driver: false
   });
 
   // Get data from store
   const { godowns, godownsLoading, fetchGodowns } = useGodowns();
   const { goods: goodsData, goodsLoading, fetchGoods } = useGoods();
+  const { users, usersLoading, fetchUsers } = useUsers();
+  const { devicesData, loading: gpsLoading, initializeData } = useGpsStore();
 
   // State for trips
   const [trips, setTrips] = useState([
@@ -118,7 +123,6 @@ const Transporter = () => {
       id: 1,
       departure: 'Warehouse A',
       destination: 'Warehouse B',
-      dateTime: '2023-05-15T10:30',
       vehicle: 'Truck 101',
       driver: 'John Doe',
       goods: 'Electronics',
@@ -130,7 +134,6 @@ const Transporter = () => {
       id: 2,
       departure: 'Warehouse C',
       destination: 'Warehouse D',
-      dateTime: '2023-05-10T14:00',
       vehicle: 'Van 202',
       driver: 'Jane Smith',
       goods: 'Furniture',
@@ -144,7 +147,9 @@ const Transporter = () => {
   useEffect(() => {
     fetchGodowns();
     fetchGoods();
-  }, [fetchGodowns, fetchGoods]);
+    fetchUsers();
+    initializeData();
+  }, [fetchGodowns, fetchGoods, fetchUsers, initializeData]);
 
   // Handle form input changes
   const handleInputChange = (e) => {
@@ -157,10 +162,10 @@ const Transporter = () => {
 
   // Toggle dropdown details
   const toggleDetails = (field) => {
-    setShowDetails({
-      ...showDetails,
-      [field]: !showDetails[field]
-    });
+    setShowDetails(prev => ({
+      ...prev,
+      [field]: !prev[field]
+    }));
   };
 
   // Handle form submission
@@ -170,18 +175,19 @@ const Transporter = () => {
     // Get selected objects from store
     const selectedDeparture = godowns?.find(g => g.id === formData.departure);
     const selectedDestination = godowns?.find(g => g.id === formData.destination);
+    const selectedVehicle = devicesData ? Object.values(devicesData).find(v => v.imei === formData.vehicle) : null;
+    const selectedDriver = users?.find(u => u.id === formData.driver);
     const selectedGoods = goodsData?.find(g => g.id === formData.goods);
     
     const newTrip = {
       id: trips.length + 1,
       departure: selectedDeparture ? selectedDeparture.godown_name : formData.departure,
       destination: selectedDestination ? selectedDestination.godown_name : formData.destination,
-      dateTime: formData.dateTime,
-      vehicle: formData.vehicle,
-      driver: formData.driver,
+      vehicle: selectedVehicle ? selectedVehicle.device_name || selectedVehicle.imei : formData.vehicle,
+      driver: selectedDriver ? selectedDriver.full_name : formData.driver,
       goods: selectedGoods ? selectedGoods.good_name : formData.goods,
       status: 'ongoing',
-      startTime: formData.dateTime,
+      startTime: new Date().toISOString().slice(0, 16), // Use current time as start time
       endTime: null
     };
     
@@ -191,7 +197,6 @@ const Transporter = () => {
     setFormData({
       departure: '',
       destination: '',
-      dateTime: '',
       vehicle: '',
       driver: '',
       goods: ''
@@ -210,6 +215,12 @@ const Transporter = () => {
   // Filter trips by status
   const ongoingTrips = trips.filter(trip => trip.status === 'ongoing');
   const completedTrips = trips.filter(trip => trip.status === 'completed');
+
+  // Filter drivers from users (only those with DRIVER role)
+  const drivers = users?.filter(user => user.role === 'DRIVER') || [];
+  
+  // Convert devicesData object to array for mapping
+  const vehiclesArray = devicesData ? Object.values(devicesData) : [];
 
   return (
     <div className={styles.container}>
@@ -292,46 +303,75 @@ const Transporter = () => {
           </div>
           
           <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Date & Time</label>
-              <input
-                type="datetime-local"
-                name="dateTime"
-                value={formData.dateTime}
-                onChange={handleInputChange}
-                className={styles.input}
-                required
-              />
-            </div>
+            <SearchableSelect
+              label="Vehicle"
+              name="vehicle"
+              value={formData.vehicle}
+              onChange={handleInputChange}
+              options={vehiclesArray}
+              loading={gpsLoading}
+              placeholder="Search vehicle..."
+              detailsButton={!!formData.vehicle}
+              onDetailsClick={() => toggleDetails('vehicle')}
+              detailsVisible={showDetails.vehicle}
+              detailsContent={
+                vehiclesArray
+                  .filter(v => v.imei === formData.vehicle)
+                  .map(vehicle => (
+                    <div key={vehicle.imei} className={styles.detailsContent}>
+                      <p><strong>IMEI:</strong> {vehicle.imei}</p>
+                      <p><strong>Device Name:</strong> {vehicle.device_name || 'N/A'}</p>
+                      <p><strong>Vehicle Type:</strong> {vehicle.vehicle_type || 'N/A'}</p>
+                      <p><strong>License Plate:</strong> {vehicle.license_plate || 'N/A'}</p>
+                      <p><strong>Speed:</strong> {vehicle.speed ? `${vehicle.speed} km/h` : 'N/A'}</p>
+                      <p><strong>Last Seen:</strong> {vehicle.last_seen ? new Date(vehicle.last_seen).toLocaleString() : 'N/A'}</p>
+                      <p><strong>Status:</strong> {vehicle.status || 'N/A'}</p>
+                      {vehicle.latitude && vehicle.longitude && (
+                        <p><strong>Location:</strong> {vehicle.latitude}, {vehicle.longitude}</p>
+                      )}
+                    </div>
+                  ))
+              }
+              displayField="device_name"
+              secondaryField="imei"
+              idField="imei" // Specify that IMEI is the ID field for vehicles
+            />
             
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Vehicle</label>
-              <input
-                type="text"
-                name="vehicle"
-                value={formData.vehicle}
-                onChange={handleInputChange}
-                className={styles.input}
-                placeholder="Vehicle ID/Name"
-                required
-              />
-            </div>
+            <SearchableSelect
+              label="Driver"
+              name="driver"
+              value={formData.driver}
+              onChange={handleInputChange}
+              options={drivers}
+              loading={usersLoading}
+              placeholder="Search driver..."
+              detailsButton={!!formData.driver}
+              onDetailsClick={() => toggleDetails('driver')}
+              detailsVisible={showDetails.driver}
+              detailsContent={
+                drivers
+                  .filter(d => d.id === formData.driver)
+                  .map(driver => (
+                    <div key={driver.id} className={styles.detailsContent}>
+                      <p><strong>ID:</strong> {driver.id}</p>
+                      <p><strong>User ID:</strong> {driver.user_id}</p>
+                      <p><strong>Full Name:</strong> {driver.full_name}</p>
+                      <p><strong>Email:</strong> {driver.email}</p>
+                      <p><strong>Phone:</strong> {driver.phone || 'N/A'}</p>
+                      <p><strong>Role:</strong> {driver.role}</p>
+                      <p><strong>Email Verified:</strong> {driver.is_email_verified ? 'Yes' : 'No'}</p>
+                      <p><strong>Active:</strong> {driver.is_active ? 'Yes' : 'No'}</p>
+                      <p><strong>Disabled:</strong> {driver.is_disabled ? 'Yes' : 'No'}</p>
+                      <p><strong>Created At:</strong> {driver.created_at ? new Date(driver.created_at).toLocaleString() : 'N/A'}</p>
+                    </div>
+                  ))
+              }
+              displayField="full_name"
+              secondaryField="user_id"
+            />
           </div>
           
           <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Driver</label>
-              <input
-                type="text"
-                name="driver"
-                value={formData.driver}
-                onChange={handleInputChange}
-                className={styles.input}
-                placeholder="Driver name"
-                required
-              />
-            </div>
-            
             <SearchableSelect
               label="Goods"
               name="goods"

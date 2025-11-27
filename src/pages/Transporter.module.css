@@ -150,6 +150,7 @@ body {
 .formGroup {
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .label {
@@ -216,6 +217,7 @@ body {
   color: var(--primary-color);
   font-weight: 500;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 
 .detailsButton:hover {
@@ -229,7 +231,7 @@ body {
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 100;
   margin-top: 4px;
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
@@ -252,7 +254,7 @@ body {
 
 .detailsContent strong {
   color: var(--text-secondary);
-  min-width: 100px;
+  min-width: 140px;
   display: inline-block;
   font-weight: 600;
 }
@@ -599,6 +601,7 @@ body {
   
   .detailsButton {
     margin-top: 8px;
+    width: 100%;
   }
   
   .optionsDropdown {
@@ -608,6 +611,12 @@ body {
   .optionItem {
     padding: 10px 12px;
     font-size: 0.9rem;
+  }
+  
+  .detailsDropdown {
+    position: static;
+    margin-top: 8px;
+    z-index: 1;
   }
 }
 
@@ -635,7 +644,7 @@ body {
   }
   
   .detailsContent {
-    padding: 12px; 
+    padding: 12px;
   }
   
   .detailsContent p {
