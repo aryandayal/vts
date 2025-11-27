@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
 });
 
 // API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://3.109.186.142:3020';
+const API_BASE_URL = process.env.VEHICLE_TABLE_API_URL || 'http://3.109.186.142:3020';
 
 // Fetch devices from backend
 const fetchDevices = async (setDevicesData, setLoading, setError) => {

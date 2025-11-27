@@ -3,14 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { Helmet } from "react-helmet";
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../../stores/authStore';
-import { userAPI } from '../../utils/api';
-import api from '../../utils/api'; // Import the default api instance
+import { useUsers } from '../../hooks/useData'; // Import the useUsers hook
 import styles from './manageuser.module.css';
 
 const ManageUser = () => {
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
@@ -18,8 +16,18 @@ const ManageUser = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
 
-  // Table data state
-  const [users, setUsers] = useState([]);
+  // Get user data and actions from Zustand store
+  const { 
+    users, 
+    usersLoading, 
+    usersError, 
+    fetchUsers, 
+    addUser, 
+    updateUser, 
+    deleteUser,
+    disableUser,
+    enableUser
+  } = useUsers();
   
   // Get auth state and functions from Zustand store
   const { user, isAuthenticated, hasRole } = useAuthStore();
@@ -59,90 +67,30 @@ const ManageUser = () => {
     }
   });
 
-  // Fetch users from database
-  const fetchUsers = async () => {
-    if (!hasPermission) {
-      setIsFetching(false);
-      return;
-    }
+  // Transform user data for display
+  const transformUsers = (usersData) => {
+    if (!usersData || !Array.isArray(usersData)) return [];
     
-    setIsFetching(true);
-    setError('');
-    
-    try {
-      const response = await userAPI.getUsers();
-      const data = response.data;
-
-      if (!data.data || !data.data.users || !Array.isArray(data.data.users)) {
-        throw new Error('Invalid response format: users array missing');
-      }
-
-      // Transform the data to match our table structure
-      const transformedUsers = data.data.users.map(user => ({
-        id: user.id, // Use the UUID for operations
-        user_id: user.user_id, // Keep the business ID for display
-        full_name: user.full_name,
-        email: user.email,
-        phone: user.phone || 'Not provided',
-        role: roleDisplayMap[user.role] || user.role, // Convert API role to display format
-        status: user.is_active ? 'ACTIVE' : 'INACTIVE', // Updated to use is_active
-        isEmailVerified: user.is_email_verified, // Add email verification status
-        lastLogin: user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never',
-        createdAt: user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'
-      }));
-
-      setUsers(transformedUsers);
-    } catch (err) {
-      console.error('Error fetching users:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to fetch users');
-    } finally {
-      setIsFetching(false);
-    }
-  };
-
-  // Fetch single user for editing
-  const fetchUserForEdit = async (id) => {
-    if (!hasPermission) {
-      setError('You do not have permission to edit users.');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      const response = await userAPI.getUserById(id);
-      const data = response.data;
-
-      // Populate form with user data using React Hook Form's setValue
-      setValue('user_id', data.data.user_id);
-      setValue('full_name', data.data.full_name);
-      setValue('email', data.data.email);
-      setValue('phone', data.data.phone || '');
-      setValue('password', ''); // Don't populate password for security
-      setValue('role', data.data.role); // Use API role format directly
-      
-      setIsEditing(true);
-      setEditingUserId(id);
-      
-      // Scroll to form
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to fetch user');
-    } finally {
-      setIsLoading(false);
-    }
+    return usersData.map(user => ({
+      id: user.id, // Use the UUID for operations
+      user_id: user.user_id, // Keep the business ID for display
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone || 'Not provided',
+      role: roleDisplayMap[user.role] || user.role, // Convert API role to display format
+      status: user.is_active ? 'ACTIVE' : 'INACTIVE', // Updated to use is_active
+      isEmailVerified: user.is_email_verified, // Add email verification status
+      lastLogin: user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never',
+      createdAt: user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'
+    }));
   };
 
   // Fetch users when component mounts
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && hasPermission) {
       fetchUsers();
-    } else {
-      setIsFetching(false);
-      setError('Authentication required. Please login.');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, hasPermission, fetchUsers]);
 
   // Handle form submission - for both create and update
   const onSubmit = async (data) => {
@@ -171,54 +119,33 @@ const ManageUser = () => {
         delete apiData.password;
       }
 
-      let response;
+      let result;
       
       if (isEditing) {
         // Update existing user
-        response = await userAPI.updateUser(editingUserId, apiData);
+        result = await updateUser(editingUserId, apiData);
       } else {
-        // Create new user using the correct endpoint
-        response = await api.post('/users/create', apiData);
+        // Create new user
+        result = await addUser(apiData);
       }
 
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Request failed with status code ${response.status}`);
+      if (result.success) {
+        // Reset form using React Hook Form's reset
+        reset();
+        
+        setIsEditing(false);
+        setEditingUserId(null);
+        
+        setSuccess(`User ${isEditing ? 'updated' : 'created'} successfully!`);
+      } else {
+        throw new Error(result.error || 'Operation failed');
       }
-
-      // Reset form using React Hook Form's reset
-      reset();
-      
-      setIsEditing(false);
-      setEditingUserId(null);
-      
-      setSuccess(`User ${isEditing ? 'updated' : 'created'} successfully!`);
-      
-      // Refresh the user list to get the latest data
-      await fetchUsers();
     } catch (err) {
       console.error('Error in onSubmit:', err);
       
       // More detailed error message
       let errorMessage = `Failed to ${isEditing ? 'update' : 'create'} user`;
-      if (err.response) {
-        errorMessage += `: ${err.response.status} ${err.response.statusText}`;
-        if (err.response.data && err.response.data.message) {
-          errorMessage += ` - ${err.response.data.message}`;
-        }
-        
-        // Special handling for 400 Bad Request
-        if (err.response.status === 400) {
-          errorMessage += '. Please check all required fields and try again.';
-          
-          // Log validation errors if available
-          if (err.response.data && err.response.data.errors) {
-            console.error('Validation errors:', err.response.data.errors);
-            const errorMessages = Object.values(err.response.data.errors).flat().join(', ');
-            errorMessage += ` Details: ${errorMessages}`;
-          }
-        }
-      } else if (err.message) {
+      if (err.message) {
         errorMessage += `: ${err.message}`;
       }
       
@@ -235,7 +162,26 @@ const ManageUser = () => {
       return;
     }
     
-    fetchUserForEdit(id);
+    // Find the user in the current users array
+    const userToEdit = users.find(user => user.id === id);
+    if (!userToEdit) {
+      setError('User not found');
+      return;
+    }
+    
+    // Populate form with user data using React Hook Form's setValue
+    setValue('user_id', userToEdit.user_id);
+    setValue('full_name', userToEdit.full_name);
+    setValue('email', userToEdit.email);
+    setValue('phone', userToEdit.phone || '');
+    setValue('password', ''); // Don't populate password for security
+    setValue('role', userToEdit.role); // Use API role format directly
+    
+    setIsEditing(true);
+    setEditingUserId(id);
+    
+    // Scroll to form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Handle delete action
@@ -253,13 +199,15 @@ const ManageUser = () => {
     setError('');
 
     try {
-      await userAPI.deleteUser(id);
-      setSuccess('User deleted successfully!');
+      const result = await deleteUser(id);
       
-      // Refresh the user list to get the latest data
-      await fetchUsers();
+      if (result.success) {
+        setSuccess('User deleted successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to delete user');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to delete user');
+      setError(err.message || 'Failed to delete user');
     } finally {
       setIsLoading(false);
     }
@@ -283,24 +231,16 @@ const ManageUser = () => {
     setSuccess('');
 
     try {
-      // Call the disable API endpoint
-      const response = await userAPI.disableUser(id, reason);
+      const result = await disableUser(id, reason);
       
-      // Log the response for debugging
-      console.log('Disable user response:', response);
-      
-      // Check if the response was successful (status code 2xx)
-      if (response.status >= 200 && response.status < 300) {
+      if (result.success) {
         setSuccess('User disabled successfully!');
-        
-        // Refresh the user list to get the latest data
-        await fetchUsers();
       } else {
-        throw new Error(`Request failed with status code ${response.status}`);
+        throw new Error(result.error || 'Failed to disable user');
       }
     } catch (err) {
       console.error('Error disabling user:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to disable user');
+      setError(err.message || 'Failed to disable user');
     } finally {
       setIsLoading(false);
     }
@@ -322,24 +262,16 @@ const ManageUser = () => {
     setSuccess('');
 
     try {
-      // Call the enable API endpoint
-      const response = await userAPI.enableUser(id);
+      const result = await enableUser(id);
       
-      // Log the response for debugging
-      console.log('Enable user response:', response);
-      
-      // Check if the response was successful (status code 2xx)
-      if (response.status >= 200 && response.status < 300) {
+      if (result.success) {
         setSuccess('User enabled successfully!');
-        
-        // Refresh the user list to get the latest data
-        await fetchUsers();
       } else {
-        throw new Error(`Request failed with status code ${response.status}`);
+        throw new Error(result.error || 'Failed to enable user');
       }
     } catch (err) {
       console.error('Error enabling user:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to enable user');
+      setError(err.message || 'Failed to enable user');
     } finally {
       setIsLoading(false);
     }
@@ -361,6 +293,9 @@ const ManageUser = () => {
   const getEmailVerifiedBadgeClass = (isVerified) => {
     return isVerified ? styles.verifiedBadge : styles.notVerifiedBadge;
   };
+
+  // Transform users for display
+  const transformedUsers = transformUsers(users);
 
   return (
     <>
@@ -516,20 +451,27 @@ const ManageUser = () => {
                   <button 
                     className={styles.refreshButton} 
                     onClick={fetchUsers}
-                    disabled={isFetching}
+                    disabled={usersLoading}
                   >
-                    {isFetching ? 'Refreshing...' : 'Refresh'}
+                    {usersLoading ? 'Refreshing...' : 'Refresh'}
                   </button>
                 </div>
                 
-                {isFetching ? (
+                {usersLoading ? (
                   <div className={styles.loadingContainer}>
                     <div className={styles.spinner}></div>
                     <p>Loading users...</p>
                   </div>
+                ) : usersError ? (
+                  <div className={styles.errorContainer}>
+                    <p>Error: {usersError}</p>
+                    <button className={styles.retryButton} onClick={fetchUsers}>
+                      Retry
+                    </button>
+                  </div>
                 ) : (
                   <div className={styles.tableWrapper}>
-                    {users.length === 0 ? (
+                    {transformedUsers.length === 0 ? (
                       <div className={styles.noDataMessage}>
                         <p>No users found. Add a new user to get started.</p>
                       </div>
@@ -550,7 +492,7 @@ const ManageUser = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {users.map((user) => (
+                          {transformedUsers.map((user) => (
                             <tr key={user.id}>
                               <td>{user.user_id}</td>
                               <td>{user.full_name}</td>

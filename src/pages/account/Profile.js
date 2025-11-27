@@ -2,12 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from "react-helmet";
 import { useAuthStore } from '../../stores/authStore';
-import { profileAPI, userAPI } from '../../utils/api';
+import { useProfile } from '../../hooks/useData'; // Import the useProfile hook
 import './profile.css';
 
 const Profile = () => {
   // Get user and auth functions from Zustand store
   const { user, isAuthenticated, updateUser, logout } = useAuthStore();
+  
+  // Get profile data and actions from Zustand store
+  const { profile, profileLoading, profileError, fetchProfile, updateProfile } = useProfile();
   
   // State for UI interactions only
   const [isEditing, setIsEditing] = useState(false);
@@ -37,6 +40,13 @@ const Profile = () => {
     }
   }, [user]);
 
+  // Fetch profile data when component mounts
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProfile();
+    }
+  }, [isAuthenticated, fetchProfile]);
+
   // Handle profile form input changes
   const handleProfileInputChange = (e) => {
     const { name, value } = e.target;
@@ -55,7 +65,7 @@ const Profile = () => {
     });
   };
 
-  // Handle profile update submission using both APIs
+  // Handle profile update submission
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -70,42 +80,31 @@ const Profile = () => {
         email: profileForm.email
       };
 
-      // Try to update using profileAPI first (current user)
-      let response;
-      try {
-        response = await profileAPI.updateProfile(requestBody);
-      } catch (profileError) {
-        // If profileAPI fails, try with userAPI using user ID
-        const userId = user?.id || user?.user_id;
-        if (userId) {
-          response = await userAPI.updateUser(userId, requestBody);
-        } else {
-          throw profileError;
-        }
-      }
+      // Update profile using Zustand store action
+      const result = await updateProfile(requestBody);
       
-      if (response.status !== 200) {
-        throw new Error(response.data?.message || 'Failed to update profile');
+      if (result.success) {
+        // Update the Zustand auth store with new data
+        updateUser({
+          ...user,
+          full_name: profileForm.full_name,
+          phone: profileForm.phone,
+          email: profileForm.email
+        });
+
+        setSuccess('Profile updated successfully!');
+        setIsEditing(false);
+      } else {
+        throw new Error(result.error || 'Failed to update profile');
       }
-
-      // Update the Zustand store with new data
-      updateUser({
-        ...user,
-        full_name: profileForm.full_name,
-        phone: profileForm.phone,
-        email: profileForm.email
-      });
-
-      setSuccess('Profile updated successfully!');
-      setIsEditing(false);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to update profile');
+      setError(err.message || 'Failed to update profile');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle password change submission using both APIs
+  // Handle password change submission
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -126,38 +125,25 @@ const Profile = () => {
         throw new Error('User ID not found. Please login again.');
       }
 
-      // Try to update using userAPI first
-      let response;
-      try {
-        response = await userAPI.changePassword(userId, {
-          oldPassword: passwordForm.oldPassword,
-          newPassword: passwordForm.newPassword
-        });
-      } catch (userError) {
-        // If userAPI fails, try with profileAPI if available
-        try {
-          response = await profileAPI.updateProfile({
-            oldPassword: passwordForm.oldPassword,
-            newPassword: passwordForm.newPassword
-          });
-        } catch (profileError) {
-          throw userError; // Throw the original error
-        }
-      }
-      
-      if (response.status !== 200) {
-        throw new Error(response.data?.message || 'Failed to change password');
-      }
-
-      setSuccess('Password changed successfully!');
-      setPasswordForm({
-        oldPassword: '',
-        newPassword: '',
-        confirmPassword: ''
+      // Update password using Zustand store action
+      const result = await updateProfile({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword
       });
-      setShowPasswordForm(false);
+      
+      if (result.success) {
+        setSuccess('Password changed successfully!');
+        setPasswordForm({
+          oldPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+        setShowPasswordForm(false);
+      } else {
+        throw new Error(result.error || 'Failed to change password');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to change password');
+      setError(err.message || 'Failed to change password');
     } finally {
       setIsLoading(false);
     }

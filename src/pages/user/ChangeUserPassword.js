@@ -3,11 +3,21 @@ import { Helmet } from "react-helmet";
 import { FaUser, FaLock, FaKey, FaSave, FaTimes, FaCheckCircle, FaSearch } from "react-icons/fa";
 import { useAuthStore } from '../../stores/authStore';
 import { useForm } from 'react-hook-form';
+import { useUsers } from '../../hooks/useData';
 import styles from './changeuserpassword.module.css';
 
 const ChangeUserPassword = () => {
   // Get user and token from Zustand store
   const { user, accessToken: token } = useAuthStore();
+  
+  // Get users data and functions from useUsers hook
+  const {
+    users,
+    usersLoading,
+    usersError,
+    fetchUsers,
+    changeUserPassword
+  } = useUsers();
   
   // State hooks for UI elements
   const [isLoading, setIsLoading] = useState(false);
@@ -19,33 +29,21 @@ const ChangeUserPassword = () => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  // User type options
+  // User type options - mapped to match the role format
   const userTypes = [
     { value: '', label: 'Select User Type' },
-    { value: 'Admin', label: 'Admin' },
-    { value: 'Manager', label: 'Manager' },
-    { value: 'Operator', label: 'Operator' },
-    { value: 'Transporter', label: 'Transporter' },
-    { value: 'Driver', label: 'Driver' }
-  ];
-
-  // Mock user data for search
-  const mockUsers = [
-    { id: 1, name: 'John Doe', email: 'john@example.com', type: 'Admin' },
-    { id: 2, name: 'Jane Smith', email: 'jane@example.com', type: 'Manager' },
-    { id: 3, name: 'Bob Johnson', email: 'bob@example.com', type: 'Operator' },
-    { id: 4, name: 'Alice Brown', email: 'alice@example.com', type: 'Transporter' },
-    { id: 5, name: 'Charlie Wilson', email: 'charlie@example.com', type: 'Driver' },
-    { id: 6, name: 'Diana Miller', email: 'diana@example.com', type: 'Admin' },
-    { id: 7, name: 'Edward Davis', email: 'edward@example.com', type: 'Manager' },
-    { id: 8, name: 'Fiona Garcia', email: 'fiona@example.com', type: 'Operator' }
+    { value: 'SUPER_ADMIN', label: 'Super Admin' },
+    { value: 'ADMIN', label: 'Admin' },
+    { value: 'MANAGER', label: 'Manager' },
+    { value: 'OPERATOR', label: 'Operator' },
+    { value: 'TRANSPORTER', label: 'Transporter' },
+    { value: 'DRIVER', label: 'Driver' }
   ];
 
   // Initialize React Hook Form
   const { register, handleSubmit, formState: { errors }, watch, reset, setValue } = useForm({
     defaultValues: {
       userType: '',
-      oldPassword: '',
       newPassword: '',
       confirmPassword: ''
     }
@@ -54,88 +52,77 @@ const ChangeUserPassword = () => {
   // Watch the userType field for filtering users
   const userTypeValue = watch('userType');
 
-  // Filter users based on search term and user type
+  // Fetch users when component mounts or when userType changes
   useEffect(() => {
-    if (userSearchTerm.trim() === '') {
+    if (userTypeValue) {
+      fetchUsers({ role: userTypeValue });
+    } else {
+      // Fetch all users if no type is selected
+      fetchUsers();
+    }
+  }, [userTypeValue, fetchUsers]);
+
+  // Show users of selected role automatically when role is selected
+  useEffect(() => {
+    if (userTypeValue && users.length > 0) {
+      // When a role is selected and users are loaded, show all users of that role
+      setUserSearchResults(users);
+      setShowUserDropdown(true);
+      setUserSearchTerm(''); // Clear search term to show all users
+    } else if (!userTypeValue) {
+      // If no role is selected, clear the search results
       setUserSearchResults([]);
+      setShowUserDropdown(false);
+    }
+  }, [userTypeValue, users]);
+
+  // Filter users based on search term
+  useEffect(() => {
+    if (!userTypeValue) return; // Don't filter if no role is selected
+    
+    if (userSearchTerm.trim() === '') {
+      // If search term is empty, show all users of the selected role
+      setUserSearchResults(users);
+      setShowUserDropdown(true);
       return;
     }
 
-    const filteredUsers = mockUsers.filter(user => {
-      const matchesSearch = user.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(userSearchTerm.toLowerCase());
-      const matchesType = !userTypeValue || user.type === userTypeValue;
-      return matchesSearch && matchesType;
+    const filteredUsers = users.filter(user => {
+      return user.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+             user.email.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+             user.user_id.toLowerCase().includes(userSearchTerm.toLowerCase());
     });
 
     setUserSearchResults(filteredUsers);
     setShowUserDropdown(true);
-  }, [userSearchTerm, userTypeValue]);
+  }, [userSearchTerm, users, userTypeValue]);
 
   // Handle user selection
   const handleUserSelect = (user) => {
     setSelectedUser(user);
-    setUserSearchTerm(user.name);
+    setUserSearchTerm(user.full_name);
     setShowUserDropdown(false);
-  };
-
-  // Helper function to get user ID from token or user object
-  const getUserId = () => {
-    // First try to get ID from user object
-    if (user && (user.id || user.user_id)) {
-      return user.id || user.user_id;
-    }
-    
-    // If not available, try to decode the token
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return payload.id || payload.userId || payload.sub || payload.user_id;
-      } catch (e) {
-        console.error('Error decoding token:', e);
-      }
-    }
-    
-    return null;
   };
 
   // Handle form submission
   const onSubmit = async (data) => {
+    if (!selectedUser) {
+      setValue('submit', 'Please select a user');
+      return;
+    }
+
     setIsLoading(true);
     
     try {
-      // Get user ID
-      const userId = getUserId();
+      // Use the changeUserPassword function from the hook
+      const result = await changeUserPassword(selectedUser.id, data.newPassword);
       
-      if (!token) {
-        throw new Error('Authentication token not found. Please login again.');
-      }
-      
-      if (!userId) {
-        throw new Error('User ID not found. Please login again.');
-      }
-      
-      // API call to change password
-      const response = await fetch(`http://3.109.186.142:3005/api/users/${userId}/change-password`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          oldPassword: data.oldPassword,
-          newPassword: data.newPassword
-        })
-      });
-      
-      const responseData = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(responseData.message || 'Failed to change password');
+      if (result.error) {
+        throw new Error(result.error || 'Failed to change password');
       }
       
       // Success
-      setSuccessMessage('Password changed successfully!');
+      setSuccessMessage(`Password changed successfully for ${selectedUser.full_name}!`);
       
       // Reset form after successful submission
       setTimeout(() => {
@@ -161,6 +148,11 @@ const ChangeUserPassword = () => {
     setShowUserDropdown(false);
   };
 
+  // Format role for display
+  const formatRole = (role) => {
+    return role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   return (
     <>
       <Helmet>
@@ -177,6 +169,12 @@ const ChangeUserPassword = () => {
           {successMessage && (
             <div className={styles.successMessage}>
               <FaCheckCircle /> {successMessage}
+            </div>
+          )}
+          
+          {usersError && (
+            <div className={styles.errorMessage}>
+              {usersError}
             </div>
           )}
           
@@ -209,6 +207,9 @@ const ChangeUserPassword = () => {
                 {errors.userType && (
                   <span className={styles.errorText}>{errors.userType.message}</span>
                 )}
+                {usersLoading && (
+                  <div className={styles.loadingText}>Loading users...</div>
+                )}
               </div>
               
               {/* Username Search Field */}
@@ -222,9 +223,10 @@ const ChangeUserPassword = () => {
                     id="username"
                     value={userSearchTerm}
                     onChange={(e) => setUserSearchTerm(e.target.value)}
-                    placeholder="Search by name or email"
+                    placeholder="Search by name, email or user ID"
                     className={errors.username ? 'error' : ''}
-                    onFocus={() => setShowUserDropdown(true)}
+                    onFocus={() => userTypeValue && setShowUserDropdown(true)}
+                    disabled={!userTypeValue || usersLoading}
                   />
                   {showUserDropdown && userSearchResults.length > 0 && (
                     <div className={styles.searchDropdown}>
@@ -234,34 +236,26 @@ const ChangeUserPassword = () => {
                           className={styles.searchResultItem}
                           onClick={() => handleUserSelect(user)}
                         >
-                          <div className={styles.userName}>{user.name}</div>
+                          <div className={styles.userName}>{user.full_name}</div>
                           <div className={styles.userEmail}>{user.email}</div>
+                          <div className={styles.userMeta}>
+                            <span className={styles.userId}>{user.user_id}</span>
+                            <span className={styles.userRole}>{formatRole(user.role)}</span>
+                          </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {showUserDropdown && userSearchResults.length === 0 && userTypeValue && (
+                    <div className={styles.searchDropdown}>
+                      <div className={styles.noResults}>
+                        {usersLoading ? 'Loading users...' : 'No users found'}
+                      </div>
                     </div>
                   )}
                 </div>
                 {errors.username && (
                   <span className={styles.errorText}>{errors.username.message}</span>
-                )}
-              </div>
-              
-              {/* Old Password Field */}
-              <div className={styles.formGroup}>
-                <label htmlFor="oldPassword">
-                  <FaLock className={styles.inputIcon} /> Old Password
-                </label>
-                <input
-                  type="password"
-                  id="oldPassword"
-                  {...register('oldPassword', { 
-                    required: 'Old password is required' 
-                  })}
-                  placeholder="Enter current password"
-                  className={errors.oldPassword ? 'error' : ''}
-                />
-                {errors.oldPassword && (
-                  <span className={styles.errorText}>{errors.oldPassword.message}</span>
                 )}
               </div>
               
@@ -289,7 +283,7 @@ const ChangeUserPassword = () => {
               </div>
               
               {/* Confirm Password Field */}
-              <div className={`${styles.formGroup} ${styles.formGroupFullWidth}`}>
+              <div className={styles.formGroup}>
                 <label htmlFor="confirmPassword">
                   <FaKey className={styles.inputIcon} /> Confirm Password
                 </label>
@@ -315,7 +309,7 @@ const ChangeUserPassword = () => {
               <button 
                 type="submit" 
                 className={styles.submitBtn}
-                disabled={isLoading}
+                disabled={isLoading || !selectedUser}
               >
                 {isLoading ? (
                   <>

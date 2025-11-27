@@ -1,120 +1,563 @@
 // stores/dataStore.js
 import { create } from 'zustand';
+import { goodsAPI, jsfcGodownAPI, userAPI, profileAPI } from '../utils/api';
 
-const useDataStore = create((set, get) => ({
-  // Godowns data
-  godowns: [],
-  
-  // Goods data
+export const useDataStore = create((set, get) => ({
+  // Goods state
   goods: [],
+  goodsLoading: false,
+  goodsError: null,
   
-  // Mock drivers data
-  drivers: [
-    { id: 'd1', name: 'John Doe', license: 'DL123456', phone: '555-1234', status: 'active' },
-    { id: 'd2', name: 'Jane Smith', license: 'DL789012', phone: '555-5678', status: 'active' },
-    { id: 'd3', name: 'Robert Johnson', license: 'DL345678', phone: '555-9012', status: 'active' },
-    { id: 'd4', name: 'Emily Davis', license: 'DL901234', phone: '555-3456', status: 'inactive' },
-    { id: 'd5', name: 'Michael Wilson', license: 'DL567890', phone: '555-7890', status: 'active' }
-  ],
+  // Godowns state
+  godowns: [],
+  deletedGodowns: [],
+  godownsLoading: false,
+  godownsError: null,
   
-  // Mock vehicles data
-  vehicles: [
-    { id: 'v1', name: 'Truck 101', type: 'Heavy Truck', capacity: '10 tons', plate: 'TRK-101', status: 'active' },
-    { id: 'v2', name: 'Van 202', type: 'Delivery Van', capacity: '2 tons', plate: 'VAN-202', status: 'active' },
-    { id: 'v3', name: 'Trailer 303', type: 'Semi-Trailer', capacity: '20 tons', plate: 'TRL-303', status: 'maintenance' },
-    { id: 'v4', name: 'Pickup 404', type: 'Pickup Truck', capacity: '1 ton', plate: 'PU-404', status: 'active' },
-    { id: 'v5', name: 'Flatbed 505', type: 'Flatbed Truck', capacity: '15 tons', plate: 'FB-505', status: 'active' }
-  ],
+  // Users state
+  users: [],
+  usersLoading: false,
+  usersError: null,
   
-  // Setters for godowns
-  setGodowns: (godowns) => set({ godowns }),
+  // Profile state
+  profile: null,
+  profileLoading: false,
+  profileError: null,
   
-  // Setters for goods
-  setGoods: (goods) => set({ goods }),
-  
-  // CRUD operations for godowns
-  addGodown: (godown) => set((state) => ({ 
-    godowns: [...state.godowns, { ...godown, id: `g${state.godowns.length + 1}` }] 
-  })),
-  updateGodown: (id, updatedGodown) => set((state) => ({
-    godowns: state.godowns.map(g => g.id === id ? { ...g, ...updatedGodown } : g)
-  })),
-  deleteGodown: (id) => set((state) => ({
-    godowns: state.godowns.filter(g => g.id !== id)
-  })),
-  
-  // CRUD operations for goods
-  addGoods: (good) => set((state) => ({ 
-    goods: [...state.goods, { ...good, id: `gd${state.goods.length + 1}` }] 
-  })),
-  updateGoods: (id, updatedGoods) => set((state) => ({
-    goods: state.goods.map(g => g.id === id ? { ...g, ...updatedGoods } : g)
-  })),
-  deleteGoods: (id) => set((state) => ({
-    goods: state.goods.filter(g => g.id !== id)
-  })),
-  
-  // CRUD operations for drivers
-  addDriver: (driver) => set((state) => ({ 
-    drivers: [...state.drivers, { ...driver, id: `d${state.drivers.length + 1}` }] 
-  })),
-  updateDriver: (id, updatedDriver) => set((state) => ({
-    drivers: state.drivers.map(d => d.id === id ? { ...d, ...updatedDriver } : d)
-  })),
-  deleteDriver: (id) => set((state) => ({
-    drivers: state.drivers.filter(d => d.id !== id)
-  })),
-  
-  // CRUD operations for vehicles
-  addVehicle: (vehicle) => set((state) => ({ 
-    vehicles: [...state.vehicles, { ...vehicle, id: `v${state.vehicles.length + 1}` }] 
-  })),
-  updateVehicle: (id, updatedVehicle) => set((state) => ({
-    vehicles: state.vehicles.map(v => v.id === id ? { ...v, ...updatedVehicle } : v)
-  })),
-  deleteVehicle: (id) => set((state) => ({
-    vehicles: state.vehicles.filter(v => v.id !== id)
-  })),
-  
-  // Helper function to get godown by ID
-  getGodownById: (id) => {
-    return get().godowns.find(godown => godown.id === id);
+  // Goods actions
+  fetchGoods: async () => {
+    set({ goodsLoading: true, goodsError: null });
+    
+    try {
+      const response = await goodsAPI.getGoods();
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      if (data && data.success === true && Array.isArray(data.data)) {
+        set({ goods: data.data });
+      } else if (data && Array.isArray(data)) {
+        set({ goods: data });
+      } else {
+        console.error('Unexpected API response structure:', data);
+        throw new Error('Unexpected API response structure');
+      }
+    } catch (error) {
+      console.error('Error fetching goods:', error);
+      set({ goodsError: error.message || 'Failed to fetch goods' });
+    } finally {
+      set({ goodsLoading: false });
+    }
   },
   
-  // Helper function to get goods by ID
-  getGoodsById: (id) => {
-    return get().goods.find(good => good.id === id);
+  addGoods: async (goodsData) => {
+    set({ goodsLoading: true, goodsError: null });
+    
+    try {
+      const response = await goodsAPI.createGoods(goodsData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the goods list after successful creation
+      await get().fetchGoods();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error adding goods:', error);
+      set({ goodsError: error.response?.data?.message || error.message || 'Failed to add goods' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to add goods' };
+    } finally {
+      set({ goodsLoading: false });
+    }
   },
   
-  // Helper function to get driver by ID
-  getDriverById: (id) => {
-    return get().drivers.find(driver => driver.id === id);
+  updateGoods: async (id, goodsData) => {
+    set({ goodsLoading: true, goodsError: null });
+    
+    try {
+      const response = await goodsAPI.updateGoods(id, goodsData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the goods list after successful update
+      await get().fetchGoods();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error updating goods:', error);
+      set({ goodsError: error.response?.data?.message || error.message || 'Failed to update goods' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to update goods' };
+    } finally {
+      set({ goodsLoading: false });
+    }
   },
   
-  // Helper function to get vehicle by ID
-  getVehicleById: (id) => {
-    return get().vehicles.find(vehicle => vehicle.id === id);
+  deleteGoods: async (id) => {
+    set({ goodsLoading: true, goodsError: null });
+    
+    try {
+      const response = await goodsAPI.deleteGoods(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the goods list after successful deletion
+      await get().fetchGoods();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting goods:', error);
+      set({ goodsError: error.response?.data?.message || error.message || 'Failed to delete goods' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to delete goods' };
+    } finally {
+      set({ goodsLoading: false });
+    }
   },
   
-  // Helper function to get active drivers only
-  getActiveDrivers: () => {
-    return get().drivers.filter(driver => driver.status === 'active');
+  // Godowns actions
+  fetchGodowns: async () => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.getGodowns();
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      // Handle different response structures
+      if (data && data.data && data.data.godowns && Array.isArray(data.data.godowns)) {
+        set({ godowns: data.data.godowns });
+      } else if (data && Array.isArray(data)) {
+        set({ godowns: data });
+      } else {
+        console.error('Unexpected API response structure for godowns:', data);
+        throw new Error('Unexpected API response structure for godowns');
+      }
+    } catch (error) {
+      console.error('Error fetching godowns:', error);
+      set({ godownsError: error.message || 'Failed to fetch godowns' });
+    } finally {
+      set({ godownsLoading: false });
+    }
   },
   
-  // Helper function to get active vehicles only
-  getActiveVehicles: () => {
-    return get().vehicles.filter(vehicle => vehicle.status === 'active');
+  fetchDeletedGodowns: async () => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.getDeletedGodowns();
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      // Handle different response structures
+      if (data && data.success === true && Array.isArray(data.data)) {
+        set({ deletedGodowns: data.data });
+      } else if (data && Array.isArray(data)) {
+        set({ deletedGodowns: data });
+      } else {
+        console.error('Unexpected API response structure for deleted godowns:', data);
+        throw new Error('Unexpected API response structure for deleted godowns');
+      }
+    } catch (error) {
+      console.error('Error fetching deleted godowns:', error);
+      set({ godownsError: error.message || 'Failed to fetch deleted godowns' });
+    } finally {
+      set({ godownsLoading: false });
+    }
   },
   
-  // Helper function to get active goods only
-  getActiveGoods: () => {
-    return get().goods.filter(good => good.status === 'active');
+  addGodown: async (godownData) => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.createGodown(godownData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the godowns list after successful creation
+      await get().fetchGodowns();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error adding godown:', error);
+      set({ godownsError: error.response?.data?.message || error.message || 'Failed to add godown' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to add godown' };
+    } finally {
+      set({ godownsLoading: false });
+    }
   },
   
-  // Helper function to get active godowns only
-  getActiveGodowns: () => {
-    return get().godowns.filter(godown => godown.status === 'active');
+  updateGodown: async (id, godownData) => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.updateGodown(id, godownData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the godowns list after successful update
+      await get().fetchGodowns();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error updating godown:', error);
+      set({ godownsError: error.response?.data?.message || error.message || 'Failed to update godown' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to update godown' };
+    } finally {
+      set({ godownsLoading: false });
+    }
+  },
+  
+  deleteGodown: async (id) => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.deleteGodown(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the godowns list after successful deletion
+      await get().fetchGodowns();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting godown:', error);
+      set({ godownsError: error.response?.data?.message || error.message || 'Failed to delete godown' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to delete godown' };
+    } finally {
+      set({ godownsLoading: false });
+    }
+  },
+  
+  restoreGodown: async (id) => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.restoreGodown(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the godowns list after successful restoration
+      await get().fetchGodowns();
+      await get().fetchDeletedGodowns();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error restoring godown:', error);
+      set({ godownsError: error.response?.data?.message || error.message || 'Failed to restore godown' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to restore godown' };
+    } finally {
+      set({ godownsLoading: false });
+    }
+  },
+  
+  importGodowns: async (formData) => {
+    set({ godownsLoading: true, godownsError: null });
+    
+    try {
+      const response = await jsfcGodownAPI.importGodowns(formData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = response.data;
+      
+      if (result.success === false) {
+        throw new Error(result.message || 'Import failed on the server');
+      }
+      
+      // Refresh the godowns list after successful import
+      await get().fetchGodowns();
+      
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('Error importing godowns:', error);
+      set({ godownsError: error.response?.data?.message || error.message || 'Failed to import godowns' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to import godowns' };
+    } finally {
+      set({ godownsLoading: false });
+    }
+  },
+  
+  // Users actions
+  fetchUsers: async () => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.getUsers();
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      if (data && data.data && data.data.users && Array.isArray(data.data.users)) {
+        set({ users: data.data.users });
+      } else if (data && Array.isArray(data)) {
+        set({ users: data });
+      } else {
+        console.error('Unexpected API response structure for users:', data);
+        throw new Error('Unexpected API response structure for users');
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      set({ usersError: error.message || 'Failed to fetch users' });
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  addUser: async (userData) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.createUser(userData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the users list after successful creation
+      await get().fetchUsers();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error adding user:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to add user' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to add user' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  updateUser: async (id, userData) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.updateUser(id, userData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the users list after successful update
+      await get().fetchUsers();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error updating user:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to update user' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to update user' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  deleteUser: async (id) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.deleteUser(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the users list after successful deletion
+      await get().fetchUsers();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to delete user' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to delete user' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  changeUserPassword: async (id, passwordData) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.changePassword(id, passwordData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error changing user password:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to change user password' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to change user password' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  disableUser: async (id, reason) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.disableUser(id, reason);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the users list after successful disable
+      await get().fetchUsers();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error disabling user:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to disable user' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to disable user' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  enableUser: async (id) => {
+    set({ usersLoading: true, usersError: null });
+    
+    try {
+      const response = await userAPI.enableUser(id);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Refresh the users list after successful enable
+      await get().fetchUsers();
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error enabling user:', error);
+      set({ usersError: error.response?.data?.message || error.message || 'Failed to enable user' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to enable user' };
+    } finally {
+      set({ usersLoading: false });
+    }
+  },
+  
+  // Profile actions
+  fetchProfile: async () => {
+    set({ profileLoading: true, profileError: null });
+    
+    try {
+      const response = await profileAPI.getProfile();
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = response.data;
+      
+      if (data && data.data) {
+        set({ profile: data.data });
+      } else if (data) {
+        set({ profile: data });
+      } else {
+        console.error('Unexpected API response structure for profile:', data);
+        throw new Error('Unexpected API response structure for profile');
+      }
+      
+      return { success: true, data: data.data || data };
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      set({ profileError: error.message || 'Failed to fetch profile' });
+      return { success: false, error: error.message || 'Failed to fetch profile' };
+    } finally {
+      set({ profileLoading: false });
+    }
+  },
+  
+  updateProfile: async (profileData) => {
+    set({ profileLoading: true, profileError: null });
+    
+    try {
+      const response = await profileAPI.updateProfile(profileData);
+      
+      // Accept any 2xx status as success
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      }
+      
+      // Update the profile in the store
+      set({ profile: { ...get().profile, ...profileData } });
+      
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      set({ profileError: error.response?.data?.message || error.message || 'Failed to update profile' });
+      return { success: false, error: error.response?.data?.message || error.message || 'Failed to update profile' };
+    } finally {
+      set({ profileLoading: false });
+    }
+  },
+  
+  // Clear all data (useful for logout)
+  clearData: () => {
+    set({
+      goods: [],
+      goodsLoading: false,
+      goodsError: null,
+      godowns: [],
+      deletedGodowns: [],
+      godownsLoading: false,
+      godownsError: null,
+      users: [],
+      usersLoading: false,
+      usersError: null,
+      profile: null,
+      profileLoading: false,
+      profileError: null
+    });
   }
 }));
-
-export default useDataStore;

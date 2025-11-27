@@ -1,5 +1,94 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styles from './Transporter.module.css';
+import { useGodowns, useGoods } from '../hooks/useData';
+
+// Custom Searchable Select Component
+const SearchableSelect = ({ 
+  label, 
+  name, 
+  value, 
+  onChange, 
+  options, 
+  loading, 
+  placeholder, 
+  detailsButton, 
+  onDetailsClick,
+  detailsVisible,
+  detailsContent,
+  displayField,
+  secondaryField
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showOptions, setShowOptions] = useState(false);
+  
+  const filteredOptions = options?.filter(option => 
+    option[displayField].toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (option[secondaryField] && option[secondaryField].toLowerCase().includes(searchTerm.toLowerCase()))
+  ) || [];
+  
+  const handleSelect = (option) => {
+    onChange({ target: { name, value: option.id } });
+    setSearchTerm('');
+    setShowOptions(false);
+  };
+  
+  const selectedOption = options?.find(option => option.id === value);
+  
+  return (
+    <div className={styles.formGroup}>
+      <label className={styles.label}>{label}</label>
+      <div className={styles.selectContainer}>
+        <div className={styles.searchableSelect}>
+          <input
+            type="text"
+            className={styles.searchInput}
+            placeholder={placeholder}
+            value={searchTerm || (selectedOption ? `${selectedOption[displayField]} ${selectedOption[secondaryField] ? `(${selectedOption[secondaryField]})` : ''}` : '')}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setShowOptions(true);
+            }}
+            onFocus={() => setShowOptions(true)}
+            onBlur={() => setTimeout(() => setShowOptions(false), 200)}
+          />
+          {showOptions && (
+            <div className={styles.optionsDropdown}>
+              {loading ? (
+                <div className={styles.optionItem}>Loading...</div>
+              ) : filteredOptions.length > 0 ? (
+                filteredOptions.map(option => (
+                  <div 
+                    key={option.id} 
+                    className={styles.optionItem}
+                    onClick={() => handleSelect(option)}
+                  >
+                    {option[displayField]} {option[secondaryField] ? `(${option[secondaryField]})` : ''}
+                  </div>
+                ))
+              ) : (
+                <div className={styles.optionItem}>No options found</div>
+              )}
+            </div>
+          )}
+        </div>
+        {detailsButton && (
+          <button 
+            type="button" 
+            className={styles.detailsButton}
+            onClick={onDetailsClick}
+          >
+            {detailsVisible ? 'Hide Details' : 'Show Details'}
+          </button>
+        )}
+      </div>
+      {detailsVisible && detailsContent && (
+        <div className={styles.detailsDropdown}>
+          {detailsContent}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Transporter = () => {
   // State for form inputs
@@ -11,6 +100,17 @@ const Transporter = () => {
     driver: '',
     goods: ''
   });
+
+  // State for dropdown visibility
+  const [showDetails, setShowDetails] = useState({
+    departure: false,
+    destination: false,
+    goods: false
+  });
+
+  // Get data from store
+  const { godowns, godownsLoading, fetchGodowns } = useGodowns();
+  const { goods: goodsData, goodsLoading, fetchGoods } = useGoods();
 
   // State for trips
   const [trips, setTrips] = useState([
@@ -40,6 +140,12 @@ const Transporter = () => {
     }
   ]);
 
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchGodowns();
+    fetchGoods();
+  }, [fetchGodowns, fetchGoods]);
+
   // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -49,13 +155,31 @@ const Transporter = () => {
     });
   };
 
+  // Toggle dropdown details
+  const toggleDetails = (field) => {
+    setShowDetails({
+      ...showDetails,
+      [field]: !showDetails[field]
+    });
+  };
+
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
     
+    // Get selected objects from store
+    const selectedDeparture = godowns?.find(g => g.id === formData.departure);
+    const selectedDestination = godowns?.find(g => g.id === formData.destination);
+    const selectedGoods = goodsData?.find(g => g.id === formData.goods);
+    
     const newTrip = {
       id: trips.length + 1,
-      ...formData,
+      departure: selectedDeparture ? selectedDeparture.godown_name : formData.departure,
+      destination: selectedDestination ? selectedDestination.godown_name : formData.destination,
+      dateTime: formData.dateTime,
+      vehicle: formData.vehicle,
+      driver: formData.driver,
+      goods: selectedGoods ? selectedGoods.good_name : formData.goods,
       status: 'ongoing',
       startTime: formData.dateTime,
       endTime: null
@@ -102,31 +226,69 @@ const Transporter = () => {
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Departure Godown</label>
-              <input
-                type="text"
-                name="departure"
-                value={formData.departure}
-                onChange={handleInputChange}
-                className={styles.input}
-                placeholder="Enter departure location"
-                required
-              />
-            </div>
+            <SearchableSelect
+              label="Source Godown"
+              name="departure"
+              value={formData.departure}
+              onChange={handleInputChange}
+              options={godowns}
+              loading={godownsLoading}
+              placeholder="Search source godown..."
+              detailsButton={!!formData.departure}
+              onDetailsClick={() => toggleDetails('departure')}
+              detailsVisible={showDetails.departure}
+              detailsContent={
+                (godowns || [])
+                  .filter(g => g.id === formData.departure)
+                  .map(godown => (
+                    <div key={godown.id} className={styles.detailsContent}>
+                      <p><strong>ID:</strong> {godown.id}</p>
+                      <p><strong>Name:</strong> {godown.godown_name}</p>
+                      <p><strong>Godown No:</strong> {godown.godown_no}</p>
+                      <p><strong>Contact:</strong> {godown.contact}</p>
+                      <p><strong>Address:</strong> {godown.address}</p>
+                      <p><strong>District:</strong> {godown.district}</p>
+                      <p><strong>Pin:</strong> {godown.pin}</p>
+                      <p><strong>Location:</strong> {godown.latitude}, {godown.longitude}</p>
+                      <p><strong>Status:</strong> {godown.is_active ? 'Active' : 'Inactive'}</p>
+                    </div>
+                  ))
+              }
+              displayField="godown_name"
+              secondaryField="godown_no"
+            />
             
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Destination Godown</label>
-              <input
-                type="text"
-                name="destination"
-                value={formData.destination}
-                onChange={handleInputChange}
-                className={styles.input}
-                placeholder="Enter destination"
-                required
-              />
-            </div>
+            <SearchableSelect
+              label="Destination Godown"
+              name="destination"
+              value={formData.destination}
+              onChange={handleInputChange}
+              options={godowns}
+              loading={godownsLoading}
+              placeholder="Search destination godown..."
+              detailsButton={!!formData.destination}
+              onDetailsClick={() => toggleDetails('destination')}
+              detailsVisible={showDetails.destination}
+              detailsContent={
+                (godowns || [])
+                  .filter(g => g.id === formData.destination)
+                  .map(godown => (
+                    <div key={godown.id} className={styles.detailsContent}>
+                      <p><strong>ID:</strong> {godown.id}</p>
+                      <p><strong>Name:</strong> {godown.godown_name}</p>
+                      <p><strong>Godown No:</strong> {godown.godown_no}</p>
+                      <p><strong>Contact:</strong> {godown.contact}</p>
+                      <p><strong>Address:</strong> {godown.address}</p>
+                      <p><strong>District:</strong> {godown.district}</p>
+                      <p><strong>Pin:</strong> {godown.pin}</p>
+                      <p><strong>Location:</strong> {godown.latitude}, {godown.longitude}</p>
+                      <p><strong>Status:</strong> {godown.is_active ? 'Active' : 'Inactive'}</p>
+                    </div>
+                  ))
+              }
+              displayField="godown_name"
+              secondaryField="godown_no"
+            />
           </div>
           
           <div className={styles.formRow}>
@@ -170,18 +332,34 @@ const Transporter = () => {
               />
             </div>
             
-            <div className={styles.formGroup}>
-              <label className={styles.label}>Goods</label>
-              <input
-                type="text"
-                name="goods"
-                value={formData.goods}
-                onChange={handleInputChange}
-                className={styles.input}
-                placeholder="Type of goods"
-                required
-              />
-            </div>
+            <SearchableSelect
+              label="Goods"
+              name="goods"
+              value={formData.goods}
+              onChange={handleInputChange}
+              options={goodsData}
+              loading={goodsLoading}
+              placeholder="Search goods..."
+              detailsButton={!!formData.goods}
+              onDetailsClick={() => toggleDetails('goods')}
+              detailsVisible={showDetails.goods}
+              detailsContent={
+                (goodsData || [])
+                  .filter(g => g.id === formData.goods)
+                  .map(item => (
+                    <div key={item.id} className={styles.detailsContent}>
+                      <p><strong>ID:</strong> {item.id}</p>
+                      <p><strong>Name:</strong> {item.good_name}</p>
+                      <p><strong>Type:</strong> {item.good_type}</p>
+                      <p><strong>Description:</strong> {item.description}</p>
+                      <p><strong>Unit Weight:</strong> {item.unit_weight} kg</p>
+                      <p><strong>Status:</strong> {item.status}</p>
+                    </div>
+                  ))
+              }
+              displayField="good_name"
+              secondaryField="good_type"
+            />
           </div>
           
           <button type="submit" className={styles.button}>

@@ -4,16 +4,22 @@ import { FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiSearch, FiChevronDown, FiChev
 import styles from './goods.module.css';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../stores/authStore';
-import { goodsAPI } from '../utils/api';
+import { useGoods } from '../hooks/useData'; // Import the useGoods hook
 
 const Goods = () => {
   // Get auth state and functions from authStore
   const { user, isAuthenticated, logout } = useAuthStore();
   
-  // Initial state for goods
-  const [goods, setGoods] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Get goods data and actions from Zustand store
+  const { 
+    goods, 
+    goodsLoading, 
+    goodsError, 
+    fetchGoods, 
+    addGoods, 
+    updateGoods, 
+    deleteGoods 
+  } = useGoods();
   
   // UI states
   const [isAdding, setIsAdding] = useState(false);
@@ -49,54 +55,12 @@ const Goods = () => {
     window.location.href = '/login';
   };
   
-  // Fetch goods from API
-  const fetchGoods = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await goodsAPI.getGoods();
-      
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = response.data;
-      
-      if (data && data.success === true && Array.isArray(data.data)) {
-        setGoods(data.data);
-      } else if (data && Array.isArray(data)) {
-        setGoods(data);
-      } else {
-        console.error('Unexpected API response structure:', data);
-        throw new Error('Unexpected API response structure');
-      }
-    } catch (err) {
-      console.error('Error fetching goods:', err);
-      
-      // Check if it's an authentication error
-      if (isAuthError(err)) {
-        handleLogout();
-        return;
-      }
-      
-      setError(err.message || 'Failed to fetch goods');
-      setGoods([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Load goods on component mount and when authentication changes
+  // Fetch goods when component mounts
   useEffect(() => {
     if (isAuthenticated) {
       fetchGoods();
-    } else {
-      setLoading(false);
-      setError('Authentication required. Please login.');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchGoods]);
   
   // Filter and sort goods
   const filteredGoods = useMemo(() => {
@@ -145,28 +109,24 @@ const Goods = () => {
         status: data.status
       };
       
-      let response;
+      let result;
       
       if (isEditing && editingId) {
-        response = await goodsAPI.updateGoods(editingId, requestData);
+        result = await updateGoods(editingId, requestData);
       } else {
-        response = await goodsAPI.createGoods(requestData);
+        result = await addGoods(requestData);
       }
       
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      if (result.success) {
+        setIsAdding(false);
+        setIsEditing(false);
+        setEditingId(null);
+        reset();
+        
+        alert(isEditing ? 'Goods updated successfully!' : 'Goods added successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to submit goods');
       }
-      
-      // Refresh the goods list after successful operation
-      await fetchGoods();
-      
-      setIsAdding(false);
-      setIsEditing(false);
-      setEditingId(null);
-      reset();
-      
-      alert(isEditing ? 'Goods updated successfully!' : 'Goods added successfully!');
     } catch (err) {
       console.error('Error submitting goods:', err);
       
@@ -176,7 +136,7 @@ const Goods = () => {
         return;
       }
       
-      alert(err.response?.data?.message || err.message || 'Failed to submit goods');
+      alert(err.message || 'Failed to submit goods');
     } finally {
       setSubmitting(false);
     }
@@ -204,16 +164,13 @@ const Goods = () => {
     }
     
     try {
-      const response = await goodsAPI.deleteGoods(id);
+      const result = await deleteGoods(id);
       
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      if (result.success) {
+        alert('Goods deleted successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to delete goods');
       }
-      
-      // Refresh the goods list after successful deletion
-      await fetchGoods();
-      alert('Goods deleted successfully!');
     } catch (err) {
       console.error('Error deleting goods:', err);
       
@@ -223,7 +180,7 @@ const Goods = () => {
         return;
       }
       
-      alert(err.response?.data?.message || err.message || 'Failed to delete goods');
+      alert(err.message || 'Failed to delete goods');
     }
   };
   
@@ -314,9 +271,9 @@ const Goods = () => {
           <button 
             className={`${styles.btn} ${styles.btnSecondary}`} 
             onClick={fetchGoods}
-            disabled={loading}
+            disabled={goodsLoading}
           >
-            <FiRefreshCw /> {loading ? 'Refreshing...' : 'Refresh'}
+            <FiRefreshCw /> {goodsLoading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -424,14 +381,14 @@ const Goods = () => {
         </div>
         
         <div className={styles.tableWrapper}>
-          {loading ? (
+          {goodsLoading ? (
             <div className={styles.loadingContainer}>
               <div className={styles.spinner}></div>
               <p>Loading goods...</p>
             </div>
-          ) : error ? (
+          ) : goodsError ? (
             <div className={styles.errorContainer}>
-              <p>Error: {error}</p>
+              <p>Error: {goodsError}</p>
               <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchGoods}>
                 Retry
               </button>

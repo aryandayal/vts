@@ -6,17 +6,27 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { useForm } from 'react-hook-form';
-import { jsfcGodownAPI } from '../utils/api';
 import { useAuthStore } from '../stores/authStore';
+import { useGodowns } from '../hooks/useData'; // Import the useGodowns hook
 
 const JsfcGodown = () => {
   // Get auth state and functions from authStore
   const { user, isAuthenticated, logout } = useAuthStore();
   
-  // Initial state for godowns
-  const [godowns, setGodowns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Get godowns data and actions from Zustand store
+  const { 
+    godowns, 
+    deletedGodowns, 
+    godownsLoading, 
+    godownsError, 
+    fetchGodowns, 
+    fetchDeletedGodowns, 
+    addGodown, 
+    updateGodown, 
+    deleteGodown, 
+    restoreGodown, 
+    importGodowns 
+  } = useGodowns();
   
   // UI states
   const [isAdding, setIsAdding] = useState(false);
@@ -62,106 +72,16 @@ const JsfcGodown = () => {
     window.location.href = '/login';
   };
   
-  // Fetch godowns from API
-  const fetchGodowns = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      let response;
-      
-      if (viewMode === 'active') {
-        response = await jsfcGodownAPI.getGodowns();
-      } else {
-        response = await jsfcGodownAPI.getDeletedGodowns();
-      }
-      
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = response.data;
-      
-      // Handle different response structures based on view mode
-      if (viewMode === 'active') {
-        // For active godowns, check for data.data.godowns structure
-        if (data && data.data && data.data.godowns && Array.isArray(data.data.godowns)) {
-          setGodowns(data.data.godowns);
-        } else if (data && Array.isArray(data)) {
-          setGodowns(data);
-        } else {
-          console.error('Unexpected API response structure for active godowns:', data);
-          throw new Error('Unexpected API response structure for active godowns');
-        }
-      } else {
-        // For deleted godowns, check for data structure (direct array)
-        if (data && data.success === true && Array.isArray(data.data)) {
-          setGodowns(data.data);
-        } else if (data && Array.isArray(data)) {
-          setGodowns(data);
-        } else {
-          console.error('Unexpected API response structure for deleted godowns:', data);
-          throw new Error('Unexpected API response structure for deleted godowns');
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching godowns:', err);
-      
-      // Check if it's an authentication error
-      if (isAuthError(err)) {
-        handleLogout();
-        return;
-      }
-      
-      setError(err.message || 'Failed to fetch godowns');
-      setGodowns([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Load godowns on component mount and when authentication changes
+  // Fetch godowns when component mounts
   useEffect(() => {
     if (isAuthenticated) {
-      fetchGodowns();
-    } else {
-      setLoading(false);
-      setError('Authentication required. Please login.');
-    }
-  }, [isAuthenticated, viewMode]);
-  
-  // Fetch a single godown by ID
-  const fetchGodownById = async (id) => {
-    try {
-      const response = await jsfcGodownAPI.getGodownById(id);
-      
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = response.data;
-      
-      if (data && data.data && data.data.godown) {
-        return data.data.godown;
-      } else if (data && data.data) {
-        return data.data;
+      if (viewMode === 'active') {
+        fetchGodowns();
       } else {
-        return data;
+        fetchDeletedGodowns();
       }
-    } catch (err) {
-      console.error('Error fetching godown:', err);
-      
-      // Check if it's an authentication error
-      if (isAuthError(err)) {
-        handleLogout();
-        throw new Error('Session expired. Please login again.');
-      }
-      
-      throw err;
     }
-  };
+  }, [isAuthenticated, viewMode, fetchGodowns, fetchDeletedGodowns]);
   
   // Filter and sort godowns
   const filteredGodowns = useMemo(() => {
@@ -214,28 +134,24 @@ const JsfcGodown = () => {
         longitude: parseFloat(data.longitude)
       };
       
-      let response;
+      let result;
       
       if (isEditing && editingId) {
-        response = await jsfcGodownAPI.updateGodown(editingId, requestData);
+        result = await updateGodown(editingId, requestData);
       } else {
-        response = await jsfcGodownAPI.createGodown(requestData);
+        result = await addGodown(requestData);
       }
       
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+      if (result.success) {
+        setIsAdding(false);
+        setIsEditing(false);
+        setEditingId(null);
+        reset();
+        
+        alert(isEditing ? 'Godown updated successfully!' : 'Godown added successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to submit godown');
       }
-      
-      // Refresh the godowns list after successful operation
-      await fetchGodowns();
-      
-      setIsAdding(false);
-      setIsEditing(false);
-      setEditingId(null);
-      reset();
-      
-      alert(isEditing ? 'Godown updated successfully!' : 'Godown added successfully!');
     } catch (err) {
       console.error('Error submitting godown:', err);
       
@@ -245,7 +161,7 @@ const JsfcGodown = () => {
         return;
       }
       
-      alert(err.response?.data?.message || err.message || 'Failed to submit godown');
+      alert(err.message || 'Failed to submit godown');
     } finally {
       setSubmitting(false);
     }
@@ -254,16 +170,14 @@ const JsfcGodown = () => {
   // Edit a godown
   const handleEdit = async (godown) => {
     try {
-      const godownData = await fetchGodownById(godown.id);
-      
-      setValue('godown_name', godownData.godown_name || '');
-      setValue('contact', godownData.contact || '');
-      setValue('address', godownData.address || '');
-      setValue('district', godownData.district || '');
-      setValue('pin', godownData.pin || '');
-      setValue('godown_no', godownData.godown_no || '');
-      setValue('latitude', godownData.latitude || '');
-      setValue('longitude', godownData.longitude || '');
+      setValue('godown_name', godown.godown_name || '');
+      setValue('contact', godown.contact || '');
+      setValue('address', godown.address || '');
+      setValue('district', godown.district || '');
+      setValue('pin', godown.pin || '');
+      setValue('godown_no', godown.godown_no || '');
+      setValue('latitude', godown.latitude || '');
+      setValue('longitude', godown.longitude || '');
       
       setIsEditing(true);
       setIsAdding(true);
@@ -288,16 +202,13 @@ const JsfcGodown = () => {
     }
     
     try {
-      const response = await jsfcGodownAPI.deleteGodown(id);
+      const result = await deleteGodown(id);
       
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      if (result.success) {
+        alert('Godown deleted successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to delete godown');
       }
-      
-      // Refresh the godowns list after successful deletion
-      await fetchGodowns();
-      alert('Godown deleted successfully!');
     } catch (err) {
       console.error('Error deleting godown:', err);
       
@@ -307,7 +218,7 @@ const JsfcGodown = () => {
         return;
       }
       
-      alert(err.response?.data?.message || err.message || 'Failed to delete godown');
+      alert(err.message || 'Failed to delete godown');
     }
   };
   
@@ -318,16 +229,13 @@ const JsfcGodown = () => {
     }
     
     try {
-      const response = await jsfcGodownAPI.restoreGodown(id);
+      const result = await restoreGodown(id);
       
-      // Accept any 2xx status as success
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Error: ${response.status} ${response.statusText}`);
+      if (result.success) {
+        alert('Godown restored successfully!');
+      } else {
+        throw new Error(result.error || 'Failed to restore godown');
       }
-      
-      // Refresh the godowns list after successful restoration
-      await fetchGodowns();
-      alert('Godown restored successfully!');
     } catch (err) {
       console.error('Error restoring godown:', err);
       
@@ -337,7 +245,7 @@ const JsfcGodown = () => {
         return;
       }
       
-      alert(err.response?.data?.message || err.message || 'Failed to restore godown');
+      alert(err.message || 'Failed to restore godown');
     }
   };
   
@@ -389,31 +297,20 @@ const JsfcGodown = () => {
         formData.append('file', file);
         
         // Use the updated importGodowns endpoint
-        const response = await jsfcGodownAPI.importGodowns(formData);
+        const result = await importGodowns(formData);
         
-        // Accept any 2xx status as success
-        if (response.status < 200 || response.status >= 300) {
-          throw new Error(response.data?.message || `Error: ${response.status} ${response.statusText}`);
+        if (result.success) {
+          let successMessage = 'Excel file imported successfully!';
+          if (result.data?.importedCount !== undefined) {
+            successMessage = `Successfully imported ${result.data.importedCount} records!`;
+          }
+          if (result.data?.message) {
+            successMessage += ` ${result.data.message}`;
+          }
+          alert(successMessage);
+        } else {
+          throw new Error(result.error || 'Import failed');
         }
-        
-        const result = response.data;
-        
-        if (result.success === false) {
-          throw new Error(result.message || 'Import failed on the server');
-        }
-        
-        // Refresh the godowns list after successful import
-        await fetchGodowns();
-        
-        let successMessage = 'Excel file imported successfully!';
-        if (result.importedCount !== undefined) {
-          successMessage = `Successfully imported ${result.importedCount} records!`;
-        }
-        if (result.message) {
-          successMessage += ` ${result.message}`;
-        }
-        alert(successMessage);
-        
       } catch (error) {
         console.error('Error importing godowns:', error);
         
@@ -423,7 +320,7 @@ const JsfcGodown = () => {
           return;
         }
         
-        alert(error.response?.data?.message || error.message || 'Failed to import godowns');
+        alert(error.message || 'Failed to import godowns');
       } finally {
         setImporting(false);
         if (excelImportRef.current) {
@@ -557,10 +454,10 @@ const JsfcGodown = () => {
           
           <button 
             className={`${styles.btn} ${styles.btnSecondary}`} 
-            onClick={fetchGodowns}
-            disabled={loading}
+            onClick={() => viewMode === 'active' ? fetchGodowns() : fetchDeletedGodowns()}
+            disabled={godownsLoading}
           >
-            <FiRefreshCw /> {loading ? 'Refreshing...' : 'Refresh'}
+            <FiRefreshCw /> {godownsLoading ? 'Refreshing...' : 'Refresh'}
           </button>
           
           <button 
@@ -783,15 +680,15 @@ const JsfcGodown = () => {
         </div>
         
         <div className={styles.tableWrapper}>
-          {loading ? (
+          {godownsLoading ? (
             <div className={styles.loadingContainer}>
               <div className={styles.spinner}></div>
               <p>Loading godowns...</p>
             </div>
-          ) : error ? (
+          ) : godownsError ? (
             <div className={styles.errorContainer}>
-              <p>Error: {error}</p>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchGodowns}>
+              <p>Error: {godownsError}</p>
+              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => viewMode === 'active' ? fetchGodowns() : fetchDeletedGodowns()}>
                 Retry
               </button>
             </div>
